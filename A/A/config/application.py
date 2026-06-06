@@ -11,6 +11,8 @@ INSTALLED_APPS = [
 
 # Local apps
 INSTALLED_APPS += [
+    'accounts.apps.AccountsConfig',
+    'blood.apps.BloodConfig',
     'home.apps.HomeConfig',
 ]
 
@@ -64,4 +66,4 @@ TEMPLATES = [
 
 # ASGI_APPLICATION = "config.asgi.application"
 
-# AUTH_USER_MODEL = "accounts.User"
+AUTH_USER_MODEL = "accounts.User"
