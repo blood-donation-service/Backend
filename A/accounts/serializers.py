@@ -16,7 +16,8 @@ from .models import (
 )
 
 
-PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$")
+PASSWORD_PATTERN = re.compile(
+    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$")
 
 
 def validate_strong_password(password):
@@ -53,7 +54,6 @@ class DonorProfileSerializer(serializers.ModelSerializer):
         fields = (
             "first_name",
             "last_name",
-            "national_code",
             "mobile_number",
             "blood_group",
             "province",
@@ -103,7 +103,8 @@ class MedicalStaffProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("national_code", "medical_center", "created_at", "updated_at")
+        read_only_fields = ("national_code", "medical_center",
+                            "created_at", "updated_at")
 
 
 class DonorRegisterSerializer(serializers.Serializer):
@@ -120,7 +121,8 @@ class DonorRegisterSerializer(serializers.Serializer):
 
     def validate_national_code(self, value):
         if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("A user with this national code exists.")
+            raise serializers.ValidationError(
+                "A user with this national code exists.")
         return value
 
     @transaction.atomic
@@ -154,7 +156,8 @@ class MedicalStaffRegisterSerializer(serializers.Serializer):
 
     def validate_national_code(self, value):
         if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("A user with this national code exists.")
+            raise serializers.ValidationError(
+                "A user with this national code exists.")
         return value
 
     def validate_center_id(self, value):
@@ -167,7 +170,8 @@ class MedicalStaffRegisterSerializer(serializers.Serializer):
     @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop("password")
-        medical_center = MedicalCenter.objects.get(center_id=validated_data.pop("center_id"))
+        medical_center = MedicalCenter.objects.get(
+            center_id=validated_data.pop("center_id"))
         user = User.objects.create_user(
             username=validated_data["national_code"],
             password=password,
@@ -218,9 +222,24 @@ class AccountMeSerializer(serializers.Serializer):
         if user.role == UserRole.DONOR:
             profile = DonorProfileSerializer(user.donor_profile).data
         elif user.role == UserRole.MEDICAL_STAFF:
-            profile = MedicalStaffProfileSerializer(user.medical_staff_profile).data
+            profile = MedicalStaffProfileSerializer(
+                user.medical_staff_profile).data
 
         return {
             "user": UserSerializer(user).data,
             "profile": profile,
         }
+
+
+class MedicalCenterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MedicalCenter
+        fields = [
+            "id",
+            "center_id",
+            "name",
+            "address",
+            "phone_number",
+            "latitude",
+            "longitude",
+        ]
