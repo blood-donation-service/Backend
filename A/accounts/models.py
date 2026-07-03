@@ -56,7 +56,10 @@ class MedicalCenter(models.Model):
         db_index=True,
     )
     address = models.TextField()
-    phone_number = models.CharField(max_length=16, validators=[phone_validator])
+    phone_number = models.CharField(
+        max_length=16, validators=[phone_validator])
+    province = models.CharField(
+        max_length=100, db_index=True, default="Tehran")
     latitude = models.DecimalField(
         max_digits=8,
         decimal_places=6,
@@ -154,7 +157,8 @@ class DonorProfile(models.Model):
     def clean(self):
         super().clean()
         if self.user_id and self.user.role != UserRole.DONOR:
-            raise ValidationError({"user": "Donor profile must belong to a donor user."})
+            raise ValidationError(
+                {"user": "Donor profile must belong to a donor user."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

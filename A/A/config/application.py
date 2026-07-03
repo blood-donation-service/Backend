@@ -14,6 +14,7 @@ INSTALLED_APPS += [
     'accounts.apps.AccountsConfig',
     'blood.apps.BloodConfig',
     'home.apps.HomeConfig',
+    'search.apps.SearchConfig',
 ]
 
 # Third-Party Apps
