@@ -8,6 +8,7 @@ from accounts.models import BloodGroup, DonorProfile, MedicalCenter
 
 class RequestStatus(models.TextChoices):
     ACTIVE = "active", "Active"
+    PENDING = "pending", "Pending"
     RESOLVED = "resolved", "Resolved"
 
 
@@ -26,7 +27,8 @@ class BloodRequest(models.Model):
     )
     title = models.CharField(max_length=255)
     blood_group = models.CharField(max_length=3, choices=BloodGroup.choices)
-    total_capacity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    total_capacity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)])
     remaining_capacity = models.PositiveIntegerField(default=0)
     status = models.CharField(
         max_length=16,
@@ -56,7 +58,8 @@ class BloodRequest(models.Model):
             pk=self.pk
         )
         if self.blood_group != previous.blood_group:
-            raise ValidationError({"blood_group": "Blood group cannot be changed."})
+            raise ValidationError(
+                {"blood_group": "Blood group cannot be changed."})
         if self.total_capacity < previous.total_capacity:
             raise ValidationError(
                 {"total_capacity": "Total capacity cannot be decreased."}
@@ -109,7 +112,8 @@ class Donation(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["donor", "request"],
-                condition=Q(status__in=[DonationStatus.PENDING, DonationStatus.DONATED]),
+                condition=Q(
+                    status__in=[DonationStatus.PENDING, DonationStatus.DONATED]),
                 name="unique_active_donation_per_request",
             ),
         ]

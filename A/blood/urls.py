@@ -1,0 +1,61 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path(
+        "requests/",
+        views.BloodRequestListView.as_view(),
+        name="blood-request-list",
+    ),
+    path(
+        "requests/<int:pk>/",
+        views.BloodRequestDetailView.as_view(),
+        name="blood-request-detail",
+    ),
+    path(
+        "requests/create/",
+        views.BloodRequestCreateView.as_view(),
+        name="blood-request-create",
+    ),
+    path(
+        "requests/<int:pk>/update/",
+        views.BloodRequestUpdateView.as_view(),
+        name="blood-request-update",
+    ),
+    path(
+        "requests/<int:pk>/resolve/",
+        views.ResolveBloodRequestView.as_view(),
+        name="blood-request-resolve",
+    ),
+    path(
+        "requests/<int:pk>/donate/",
+        views.RegisterDonationView.as_view(),
+        name="register-donation",
+    ),
+    path(
+        "donations/me/",
+        views.MyDonationListView.as_view(),
+        name="my-donations",
+    ),
+    path(
+        "donations/<int:pk>/",
+        views.DonationUpdateView.as_view(),
+        name="donation-update",
+    ),
+    path(
+        "medical-center/requests/",
+        views.MedicalCenterRequestListView.as_view(),
+        name="medical-center-requests",
+    ),
+    path(
+        "requests/<int:pk>/donors/",
+        views.RequestDonorListView.as_view(),
+        name="participants",
+    ),
+    path(
+        "donations/<int:pk>/donated/",
+        views.MarkDonationAsDonatedView.as_view(),
+        name="marking-donated",
+    ),
+]

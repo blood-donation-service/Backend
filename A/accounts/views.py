@@ -2,6 +2,8 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from .models import MedicalCenter
+from .serializers import MedicalCenterSerializer
 
 from .models import UserRole
 from .serializers import (
@@ -44,7 +46,8 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = LoginSerializer(data=request.data, context={"request": request})
+        serializer = LoginSerializer(
+            data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         return Response(serializer.save())
 
@@ -77,3 +80,12 @@ class AccountMeView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(AccountMeSerializer(request.user).data)
+
+
+class MedicalCenterListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        centers = MedicalCenter.objects.all()
+        serializer = MedicalCenterSerializer(centers, many=True)
+        return Response(serializer.data)
