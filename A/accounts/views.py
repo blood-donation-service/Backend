@@ -9,9 +9,8 @@ from .serializers import (
     DonorProfileSerializer,
     DonorRegisterSerializer,
     LoginSerializer,
-    MedicalCenterLookupSerializer,
-    MedicalCenterProfileSerializer,
-    MedicalCenterRegisterSerializer,
+    MedicalStaffProfileSerializer,
+    MedicalStaffRegisterSerializer,
 )
 
 
@@ -28,26 +27,17 @@ class DonorRegisterView(APIView):
         )
 
 
-class MedicalCenterRegisterView(APIView):
+class MedicalStaffRegisterView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = MedicalCenterRegisterSerializer(data=request.data)
+        serializer = MedicalStaffRegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         profile = serializer.save()
         return Response(
-            MedicalCenterRegisterSerializer(profile).data,
+            MedicalStaffRegisterSerializer(profile).data,
             status=status.HTTP_201_CREATED,
         )
-
-
-class MedicalCenterLookupView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = MedicalCenterLookupSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(serializer.save())
 
 
 class LoginView(APIView):
@@ -72,9 +62,9 @@ class AccountMeView(APIView):
                 data=request.data,
                 partial=True,
             )
-        elif request.user.role == UserRole.MEDICAL_CENTER:
-            serializer = MedicalCenterProfileSerializer(
-                request.user.medical_center_profile,
+        elif request.user.role == UserRole.MEDICAL_STAFF:
+            serializer = MedicalStaffProfileSerializer(
+                request.user.medical_staff_profile,
                 data=request.data,
                 partial=True,
             )

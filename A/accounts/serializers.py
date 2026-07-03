@@ -9,7 +9,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     BloodGroup,
     DonorProfile,
-    MedicalCenterProfile,
+    MedicalCenter,
+    MedicalStaffProfile,
     User,
     UserRole,
 )
@@ -34,15 +35,6 @@ def build_token_response(user):
         "refresh": str(refresh),
         "access": str(refresh.access_token),
         "user": UserSerializer(user).data,
-    }
-
-
-def lookup_medical_center(center_id, postal_code):
-    return {
-        "center_id": center_id,
-        "postal_code": postal_code,
-        "name": f"Medical Center {center_id}",
-        "address": f"Address registered for postal code {postal_code}",
     }
 
 
@@ -71,10 +63,11 @@ class DonorProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ("national_code", "created_at", "updated_at")
 
 
-class MedicalCenterProfileSerializer(serializers.ModelSerializer):
+class MedicalCenterSerializer(serializers.ModelSerializer):
     class Meta:
-        model = MedicalCenterProfile
+        model = MedicalCenter
         fields = (
+            "id",
             "center_id",
             "name",
             "postal_code",
@@ -85,7 +78,32 @@ class MedicalCenterProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("center_id", "created_at", "updated_at")
+        read_only_fields = ("id", "center_id", "created_at", "updated_at")
+
+
+class MedicalStaffProfileSerializer(serializers.ModelSerializer):
+    medical_center = MedicalCenterSerializer(read_only=True)
+    center_id = serializers.SlugRelatedField(
+        slug_field="center_id",
+        queryset=MedicalCenter.objects.all(),
+        source="medical_center",
+        write_only=True,
+        required=False,
+    )
+
+    class Meta:
+        model = MedicalStaffProfile
+        fields = (
+            "first_name",
+            "last_name",
+            "national_code",
+            "mobile_number",
+            "center_id",
+            "medical_center",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("national_code", "medical_center", "created_at", "updated_at")
 
 
 class DonorRegisterSerializer(serializers.Serializer):
@@ -123,55 +141,49 @@ class DonorRegisterSerializer(serializers.Serializer):
         }
 
 
-class MedicalCenterRegisterSerializer(serializers.Serializer):
+class MedicalStaffRegisterSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    national_code = serializers.CharField(max_length=10)
+    mobile_number = serializers.CharField(max_length=11)
     center_id = serializers.CharField(max_length=64)
-    name = serializers.CharField(max_length=255, required=False, allow_blank=True)
-    postal_code = serializers.CharField(max_length=10)
-    address = serializers.CharField(required=False, allow_blank=True)
-    phone_number = serializers.CharField(max_length=16)
-    latitude = serializers.DecimalField(
-        max_digits=8,
-        decimal_places=6,
-        required=False,
-        allow_null=True,
-    )
-    longitude = serializers.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        required=False,
-        allow_null=True,
-    )
     password = serializers.CharField(write_only=True, trim_whitespace=False)
 
     def validate_password(self, value):
         return validate_strong_password(value)
 
-    def validate_center_id(self, value):
+    def validate_national_code(self, value):
         if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("A user with this center id exists.")
+            raise serializers.ValidationError("A user with this national code exists.")
         return value
 
-    def validate(self, attrs):
-        mocked_data = lookup_medical_center(attrs["center_id"], attrs["postal_code"])
-        attrs["name"] = attrs.get("name") or mocked_data["name"]
-        attrs["address"] = attrs.get("address") or mocked_data["address"]
-        return attrs
+    def validate_center_id(self, value):
+        if not MedicalCenter.objects.filter(center_id=value).exists():
+            raise serializers.ValidationError(
+                "No medical center exists with this center id."
+            )
+        return value
 
     @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop("password")
+        medical_center = MedicalCenter.objects.get(center_id=validated_data.pop("center_id"))
         user = User.objects.create_user(
-            username=validated_data["center_id"],
+            username=validated_data["national_code"],
             password=password,
-            role=UserRole.MEDICAL_CENTER,
+            role=UserRole.MEDICAL_STAFF,
         )
-        profile = MedicalCenterProfile.objects.create(user=user, **validated_data)
+        profile = MedicalStaffProfile.objects.create(
+            user=user,
+            medical_center=medical_center,
+            **validated_data,
+        )
         return profile
 
     def to_representation(self, instance):
         return {
             "user": UserSerializer(instance.user).data,
-            "profile": MedicalCenterProfileSerializer(instance).data,
+            "profile": MedicalStaffProfileSerializer(instance).data,
         }
 
 
@@ -196,14 +208,6 @@ class LoginSerializer(serializers.Serializer):
         return build_token_response(validated_data["user"])
 
 
-class MedicalCenterLookupSerializer(serializers.Serializer):
-    center_id = serializers.CharField(max_length=64)
-    postal_code = serializers.CharField(max_length=10)
-
-    def create(self, validated_data):
-        return lookup_medical_center(**validated_data)
-
-
 class AccountMeSerializer(serializers.Serializer):
     user = UserSerializer(read_only=True)
     profile = serializers.DictField(read_only=True)
@@ -213,8 +217,8 @@ class AccountMeSerializer(serializers.Serializer):
         profile = None
         if user.role == UserRole.DONOR:
             profile = DonorProfileSerializer(user.donor_profile).data
-        elif user.role == UserRole.MEDICAL_CENTER:
-            profile = MedicalCenterProfileSerializer(user.medical_center_profile).data
+        elif user.role == UserRole.MEDICAL_STAFF:
+            profile = MedicalStaffProfileSerializer(user.medical_staff_profile).data
 
         return {
             "user": UserSerializer(user).data,

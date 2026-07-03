@@ -3,7 +3,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q
 
-from accounts.models import BloodGroup, DonorProfile, MedicalCenterProfile
+from accounts.models import BloodGroup, DonorProfile, MedicalCenter
 
 
 class RequestStatus(models.TextChoices):
@@ -20,7 +20,7 @@ class DonationStatus(models.TextChoices):
 
 class BloodRequest(models.Model):
     medical_center = models.ForeignKey(
-        MedicalCenterProfile,
+        MedicalCenter,
         on_delete=models.CASCADE,
         related_name="blood_requests",
     )

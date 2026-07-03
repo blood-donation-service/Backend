@@ -6,7 +6,7 @@ from django.db import models
 
 class UserRole(models.TextChoices):
     DONOR = "donor", "Donor"
-    MEDICAL_CENTER = "medical_center", "Medical center"
+    MEDICAL_STAFF = "medical_staff", "Medical staff"
 
 
 class User(AbstractUser):
@@ -47,12 +47,7 @@ postal_code_validator = RegexValidator(
 )
 
 
-class MedicalCenterProfile(models.Model):
-    user = models.OneToOneField(
-        User,
-        on_delete=models.CASCADE,
-        related_name="medical_center_profile",
-    )
+class MedicalCenter(models.Model):
     center_id = models.CharField(max_length=64, unique=True, db_index=True)
     name = models.CharField(max_length=255)
     postal_code = models.CharField(
@@ -80,11 +75,45 @@ class MedicalCenterProfile(models.Model):
     class Meta:
         ordering = ["name"]
 
+    def __str__(self):
+        return f"{self.name} ({self.center_id})"
+
+
+class MedicalStaffProfile(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="medical_staff_profile",
+    )
+    medical_center = models.ForeignKey(
+        MedicalCenter,
+        on_delete=models.CASCADE,
+        related_name="staff",
+    )
+    first_name = models.CharField(max_length=150)
+    last_name = models.CharField(max_length=150)
+    national_code = models.CharField(
+        max_length=10,
+        unique=True,
+        validators=[national_code_validator],
+        db_index=True,
+    )
+    mobile_number = models.CharField(
+        max_length=11,
+        unique=True,
+        validators=[mobile_validator],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["last_name", "first_name"]
+
     def clean(self):
         super().clean()
-        if self.user_id and self.user.role != UserRole.MEDICAL_CENTER:
+        if self.user_id and self.user.role != UserRole.MEDICAL_STAFF:
             raise ValidationError(
-                {"user": "Medical center profile must belong to a medical center user."}
+                {"user": "Medical staff profile must belong to a medical staff user."}
             )
 
     def save(self, *args, **kwargs):
@@ -92,7 +121,7 @@ class MedicalCenterProfile(models.Model):
         return super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.name} ({self.center_id})"
+        return f"{self.first_name} {self.last_name} ({self.national_code})"
 
 
 class DonorProfile(models.Model):

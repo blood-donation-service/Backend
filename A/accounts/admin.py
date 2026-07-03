@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import DonorProfile, MedicalCenterProfile, User
+from .models import DonorProfile, MedicalCenter, MedicalStaffProfile, User
 
 
 @admin.register(User)
@@ -16,10 +16,30 @@ class UserAdmin(DjangoUserAdmin):
     list_filter = ("role", "is_staff", "is_active")
 
 
-@admin.register(MedicalCenterProfile)
-class MedicalCenterProfileAdmin(admin.ModelAdmin):
+@admin.register(MedicalCenter)
+class MedicalCenterAdmin(admin.ModelAdmin):
     list_display = ("name", "center_id", "phone_number", "postal_code")
     search_fields = ("name", "center_id", "phone_number", "postal_code", "address")
+
+
+@admin.register(MedicalStaffProfile)
+class MedicalStaffProfileAdmin(admin.ModelAdmin):
+    list_display = (
+        "first_name",
+        "last_name",
+        "national_code",
+        "mobile_number",
+        "medical_center",
+    )
+    list_filter = ("medical_center",)
+    search_fields = (
+        "first_name",
+        "last_name",
+        "national_code",
+        "mobile_number",
+        "medical_center__name",
+        "medical_center__center_id",
+    )
 
 
 @admin.register(DonorProfile)

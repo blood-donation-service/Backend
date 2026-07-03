@@ -1,7 +1,24 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import DonorProfile, MedicalCenterProfile, User, UserRole
+from .models import (
+    DonorProfile,
+    MedicalCenter,
+    MedicalStaffProfile,
+    User,
+    UserRole,
+)
+
+
+def create_medical_center(center_id="CENTER-1", **overrides):
+    defaults = {
+        "name": "Sina Hospital",
+        "postal_code": "1234567890",
+        "address": "Tehran, Valiasr",
+        "phone_number": "02112345678",
+    }
+    defaults.update(overrides)
+    return MedicalCenter.objects.create(center_id=center_id, **defaults)
 
 
 class AccountAuthAPITests(APITestCase):
@@ -44,24 +61,46 @@ class AccountAuthAPITests(APITestCase):
         self.assertEqual(me_response.status_code, status.HTTP_200_OK)
         self.assertEqual(me_response.data["profile"]["blood_group"], "O+")
 
-    def test_medical_center_can_register_with_mocked_name_and_address(self):
+    def test_medical_staff_can_register_against_existing_medical_center(self):
+        create_medical_center(center_id="CENTER-1")
         response = self.client.post(
-            "/api/auth/register/center/",
+            "/api/auth/register/staff/",
             {
+                "first_name": "Reza",
+                "last_name": "Sadeghi",
+                "national_code": "9876543210",
+                "mobile_number": "09121112233",
                 "center_id": "CENTER-1",
-                "postal_code": "1234567890",
-                "phone_number": "02112345678",
                 "password": "Strong!Pass123",
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["user"]["role"], UserRole.MEDICAL_CENTER)
-        self.assertEqual(response.data["profile"]["name"], "Medical Center CENTER-1")
-        self.assertTrue(
-            MedicalCenterProfile.objects.filter(center_id="CENTER-1").exists()
+        self.assertEqual(response.data["user"]["role"], UserRole.MEDICAL_STAFF)
+        self.assertEqual(
+            response.data["profile"]["medical_center"]["center_id"], "CENTER-1"
         )
+        self.assertTrue(
+            MedicalStaffProfile.objects.filter(national_code="9876543210").exists()
+        )
+
+    def test_staff_registration_rejects_unknown_center(self):
+        response = self.client.post(
+            "/api/auth/register/staff/",
+            {
+                "first_name": "Reza",
+                "last_name": "Sadeghi",
+                "national_code": "9876543210",
+                "mobile_number": "09121112233",
+                "center_id": "NOPE-999",
+                "password": "Strong!Pass123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(User.objects.exists())
 
     def test_weak_password_is_rejected(self):
         response = self.client.post(

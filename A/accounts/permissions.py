@@ -12,10 +12,10 @@ class IsDonor(BasePermission):
         )
 
 
-class IsMedicalCenter(BasePermission):
+class IsMedicalStaff(BasePermission):
     def has_permission(self, request, view):
         return bool(
             request.user
             and request.user.is_authenticated
-            and request.user.role == UserRole.MEDICAL_CENTER
+            and request.user.role == UserRole.MEDICAL_STAFF
         )
