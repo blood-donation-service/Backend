@@ -2,19 +2,24 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+REPO_DIR = BASE_DIR.parent
+
+load_dotenv(REPO_DIR / ".env")
+load_dotenv(BASE_DIR / ".env")
 env = os.environ.get
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
 # Debug mode settings
-DEBUG = env("DEBUG").lower() == "true"
+DEBUG = env("DEBUG", "true").lower() == "true"
 
 # Deployment environment settings
 
-deploy = env("deploy").lower() == "true"
+deploy = env("deploy", "false").lower() == "true"
 # Secret key for security purposes
-SECRET_KEY = env("SECRET_KEY")
+SECRET_KEY = env(
+    "SECRET_KEY",
+    "unsafe-local-development-secret-key-with-more-than-32-characters",
+)
 
 
 # REDIS_LINK = env("REDIS_LINK")
