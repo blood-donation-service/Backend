@@ -14,7 +14,7 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
 
   redis:
     image: redis:7-alpine
@@ -28,7 +28,7 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -44,8 +44,8 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
 
   web:
     build:
@@ -76,7 +76,7 @@ services:
       - static_files:/app/A/staticfiles
       - media_files:/app/A/media
     ports:
-      - "8000:8000"
+      - "${WEB_PORT:-8000}:8000"
 
 volumes:
   postgres_data:
