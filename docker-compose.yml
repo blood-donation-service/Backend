@@ -13,8 +13,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
 
   redis:
     image: redis:7-alpine
@@ -27,8 +25,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -43,9 +39,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    ports:
-      - "${RABBITMQ_PORT:-5672}:5672"
-      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
 
   web:
     build:
@@ -69,14 +62,18 @@ services:
       db:
         condition: service_healthy
       redis:
-        condition: service_healthy
+        condition: service_started
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - static_files:/app/A/staticfiles
       - media_files:/app/A/media
-    ports:
-      - "${WEB_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   postgres_data:
