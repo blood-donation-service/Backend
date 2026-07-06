@@ -15,14 +15,7 @@ else:
         'http://127.0.0.1:5173',
         'http://localhost:5173',
     ]
-    ALLOWED_HOSTS = [
-        'domain',
-        'localhost',
-        '127.0.0.1',
-        '.sslip.io',
-        '.onrender.com',
-        '.dokploy.com',
-    ]
+    ALLOWED_HOSTS = ['*']
 
     INTERNAL_IPS = [
         "127.0.0.1",
