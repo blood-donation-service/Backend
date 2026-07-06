@@ -1,12 +1,16 @@
-from django.shortcuts import render
-
 from django.shortcuts import get_object_or_404
-from rest_framework import status
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db import transaction, IntegrityError
-from django.db.models import F
+from django.db import transaction
 from django.utils import timezone
 
 from accounts.models import UserRole
@@ -22,10 +26,33 @@ from .serializers import (
     BloodRequestUpdateSerializer,
     DonationSerializer,
     DonationStatusSerializer,
-    DonationStaffSerializer
+    DonationStaffSerializer,
 )
 
 
+_FORBIDDEN_DETAIL = inline_serializer(
+    name="ForbiddenDetail",
+    fields={"detail": serializers.CharField()},
+)
+_BAD_REQUEST_DETAIL = inline_serializer(
+    name="BadRequestDetail",
+    fields={"detail": serializers.CharField()},
+)
+_NOT_FOUND_DETAIL = inline_serializer(
+    name="NotFoundDetail",
+    fields={"detail": serializers.CharField()},
+)
+
+
+@extend_schema(
+    tags=["blood-requests"],
+    summary="List active blood requests",
+    description=(
+        "Public list of blood requests that are still `active` and have "
+        "remaining capacity."
+    ),
+    responses={200: BloodRequestSerializer(many=True)},
+)
 class BloodRequestListView(APIView):
     permission_classes = [AllowAny]
 
@@ -41,6 +68,26 @@ class BloodRequestListView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema(
+    tags=["blood-requests"],
+    summary="Retrieve a blood request",
+    description="Public detail endpoint for a single blood request.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            location=OpenApiParameter.PATH,
+            type=int,
+            description="Blood request ID.",
+        )
+    ],
+    responses={
+        200: BloodRequestSerializer,
+        404: OpenApiResponse(
+            response=_NOT_FOUND_DETAIL,
+            description="Blood request not found.",
+        ),
+    },
+)
 class BloodRequestDetailView(APIView):
     permission_classes = [AllowAny]
 
@@ -53,6 +100,31 @@ class BloodRequestDetailView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema(
+    tags=["blood-requests"],
+    summary="Create a blood request",
+    description=(
+        "Medical-staff only. Creates a blood request attached to the caller's "
+        "medical center. `remaining_capacity` defaults to `total_capacity`."
+    ),
+    request=BloodRequestCreateSerializer,
+    responses={
+        201: BloodRequestSerializer,
+        400: OpenApiResponse(description="Validation error."),
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(
+            response=_FORBIDDEN_DETAIL,
+            description="Caller is not medical staff.",
+        ),
+    },
+    examples=[
+        OpenApiExample(
+            "Create payload",
+            value={"title": "Urgent A+ needed", "blood_group": "A+", "total_capacity": 5},
+            request_only=True,
+        )
+    ],
+)
 class BloodRequestCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -76,6 +148,33 @@ class BloodRequestCreateView(APIView):
         )
 
 
+@extend_schema(
+    tags=["blood-requests"],
+    summary="Update a blood request",
+    description=(
+        "Medical-staff only. Partial update of `title` and/or `total_capacity` "
+        "(can only be increased). Blood group is immutable."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            location=OpenApiParameter.PATH,
+            type=int,
+            description="Blood request ID.",
+        )
+    ],
+    request=BloodRequestUpdateSerializer,
+    responses={
+        200: BloodRequestSerializer,
+        400: OpenApiResponse(description="Validation error."),
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(description="Caller is not medical staff."),
+        404: OpenApiResponse(
+            response=_NOT_FOUND_DETAIL,
+            description="Blood request not found in caller's medical center.",
+        ),
+    },
+)
 class BloodRequestUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -103,6 +202,30 @@ class BloodRequestUpdateView(APIView):
         return Response(BloodRequestSerializer(blood_request).data)
 
 
+@extend_schema(
+    tags=["blood-requests"],
+    summary="Resolve a blood request",
+    description=(
+        "Medical-staff only. Marks the request as `resolved` once all "
+        "donations are complete. The request must belong to the caller's "
+        "medical center."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            location=OpenApiParameter.PATH,
+            type=int,
+            description="Blood request ID.",
+        )
+    ],
+    request=None,
+    responses={
+        200: BloodRequestSerializer,
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(description="Caller is not medical staff."),
+        404: OpenApiResponse(description="Blood request not found."),
+    },
+)
 class ResolveBloodRequestView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -125,6 +248,40 @@ class ResolveBloodRequestView(APIView):
         return Response(BloodRequestSerializer(blood_request).data)
 
 
+@extend_schema(
+    tags=["donations"],
+    summary="Register as a donor for a request",
+    description=(
+        "Donor only. Registers the caller as a pending donor on the given "
+        "active blood request. Decrements `remaining_capacity` by 1. "
+        "A donor cannot have more than one active (pending/donated) "
+        "donation per request."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            location=OpenApiParameter.PATH,
+            type=int,
+            description="Blood request ID.",
+        )
+    ],
+    request=None,
+    responses={
+        201: DonationSerializer,
+        400: OpenApiResponse(
+            response=_BAD_REQUEST_DETAIL,
+            description=(
+                "No remaining capacity or duplicate active donation."
+            ),
+        ),
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(description="Caller is not a donor."),
+        404: OpenApiResponse(
+            response=_NOT_FOUND_DETAIL,
+            description="Active blood request not found.",
+        ),
+    },
+)
 class RegisterDonationView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -184,6 +341,16 @@ class RegisterDonationView(APIView):
         )
 
 
+@extend_schema(
+    tags=["donations"],
+    summary="List my donations",
+    description="Donor only. Returns all donations belonging to the caller.",
+    responses={
+        200: DonationSerializer(many=True),
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(description="Caller is not a donor."),
+    },
+)
 class MyDonationListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -208,6 +375,41 @@ class MyDonationListView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema(
+    tags=["donations"],
+    summary="Cancel a donation",
+    description=(
+        "Cancels a pending donation. Donors may cancel their own donations; "
+        "medical staff may cancel donations belonging to their own center. "
+        "Only `pending` donations can be cancelled; doing so frees one slot "
+        "in the parent blood request."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            location=OpenApiParameter.PATH,
+            type=int,
+            description="Donation ID.",
+        )
+    ],
+    request=None,
+    responses={
+        200: DonationSerializer,
+        400: OpenApiResponse(
+            response=_BAD_REQUEST_DETAIL,
+            description="Donation is not in `pending` state.",
+        ),
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(
+            response=_FORBIDDEN_DETAIL,
+            description=(
+                "Caller may only cancel their own donation (donor) or "
+                "donations of their own center (staff)."
+            ),
+        ),
+        404: OpenApiResponse(description="Donation not found."),
+    },
+)
 class DonationUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -218,7 +420,6 @@ class DonationUpdateView(APIView):
             pk=pk,
         )
 
-        # Authorization
         if request.user.role == UserRole.DONOR:
             if donation.donor != request.user.donor_profile:
                 return Response(
@@ -246,7 +447,6 @@ class DonationUpdateView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Only pending donations can be cancelled
         if donation.status != DonationStatus.PENDING:
             return Response(
                 {"detail": "Only pending donations can be cancelled."},
@@ -286,6 +486,19 @@ class DonationUpdateView(APIView):
         )
 
 
+@extend_schema(
+    tags=["blood-requests"],
+    summary="List my medical center's blood requests",
+    description=(
+        "Medical-staff only. Returns every blood request belonging to the "
+        "caller's medical center, regardless of status."
+    ),
+    responses={
+        200: BloodRequestSerializer(many=True),
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(description="Caller is not medical staff."),
+    },
+)
 class MedicalCenterRequestListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -308,6 +521,28 @@ class MedicalCenterRequestListView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema(
+    tags=["donations"],
+    summary="List donors for a blood request",
+    description=(
+        "Medical-staff only. Returns all donations (with donor profile) "
+        "registered for the given request, ordered by most recent."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            location=OpenApiParameter.PATH,
+            type=int,
+            description="Blood request ID.",
+        )
+    ],
+    responses={
+        200: DonationStaffSerializer(many=True),
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(description="Caller is not medical staff."),
+        404: OpenApiResponse(description="Blood request not found."),
+    },
+)
 class RequestDonorListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -341,6 +576,46 @@ class RequestDonorListView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema(
+    tags=["donations"],
+    summary="Mark a donation as donated",
+    description=(
+        "Medical-staff only. Transitions a `pending` donation to `donated`. "
+        "Only donations belonging to the caller's medical center can be updated."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            location=OpenApiParameter.PATH,
+            type=int,
+            description="Donation ID.",
+        )
+    ],
+    request=DonationStatusSerializer,
+    responses={
+        200: DonationSerializer,
+        400: OpenApiResponse(
+            response=_BAD_REQUEST_DETAIL,
+            description="Donation is not in `pending` state.",
+        ),
+        401: OpenApiResponse(description="Authentication required."),
+        403: OpenApiResponse(
+            response=_FORBIDDEN_DETAIL,
+            description=(
+                "Caller is not medical staff, or donation belongs to a "
+                "different medical center."
+            ),
+        ),
+        404: OpenApiResponse(description="Donation not found."),
+    },
+    examples=[
+        OpenApiExample(
+            "Mark as donated payload",
+            value={"status": "donated"},
+            request_only=True,
+        )
+    ],
+)
 class MarkDonationAsDonatedView(APIView):
     permission_classes = [IsAuthenticated]
 

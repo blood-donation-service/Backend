@@ -1,21 +1,71 @@
-from rest_framework import status
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+    inline_serializer,
+)
+from drf_spectacular.types import OpenApiTypes
+from rest_framework import status, serializers
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import MedicalCenter
-from .serializers import MedicalCenterSerializer
 
-from .models import UserRole
+from .models import MedicalCenter, UserRole
 from .serializers import (
     AccountMeSerializer,
     DonorProfileSerializer,
     DonorRegisterSerializer,
     LoginSerializer,
+    MedicalCenterSerializer,
     MedicalStaffProfileSerializer,
     MedicalStaffRegisterSerializer,
 )
 
 
+@extend_schema(
+    tags=["auth"],
+    summary="Register a new donor",
+    description=(
+        "Create a donor account. The national code is used as the username. "
+        "Password must be at least 8 characters and include lowercase, "
+        "uppercase, a number, and a special character."
+    ),
+    request=DonorRegisterSerializer,
+    responses={
+        201: DonorRegisterSerializer,
+        400: OpenApiResponse(
+            response=inline_serializer(
+                name="DonorRegisterError",
+                fields={
+                    "detail": serializers.CharField(required=False),
+                    "national_code": serializers.ListField(
+                        child=serializers.CharField(), required=False
+                    ),
+                    "password": serializers.ListField(
+                        child=serializers.CharField(), required=False
+                    ),
+                },
+            ),
+            description="Validation error (duplicate national code, weak password, etc.).",
+        ),
+    },
+    examples=[
+        OpenApiExample(
+            "Donor registration payload",
+            value={
+                "first_name": "Ali",
+                "last_name": "Ahmadi",
+                "national_code": "0123456789",
+                "mobile_number": "09123456789",
+                "blood_group": "A+",
+                "province": "Tehran",
+                "password": "Strong#Pass1",
+            },
+            request_only=True,
+        )
+    ],
+)
 class DonorRegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -29,6 +79,49 @@ class DonorRegisterView(APIView):
         )
 
 
+@extend_schema(
+    tags=["auth"],
+    summary="Register a new medical staff member",
+    description=(
+        "Create a medical-staff account attached to an existing medical center "
+        "(identified by its `center_id`). The national code is used as the username."
+    ),
+    request=MedicalStaffRegisterSerializer,
+    responses={
+        201: MedicalStaffRegisterSerializer,
+        400: OpenApiResponse(
+            response=inline_serializer(
+                name="MedicalStaffRegisterError",
+                fields={
+                    "center_id": serializers.ListField(
+                        child=serializers.CharField(), required=False
+                    ),
+                    "national_code": serializers.ListField(
+                        child=serializers.CharField(), required=False
+                    ),
+                    "password": serializers.ListField(
+                        child=serializers.CharField(), required=False
+                    ),
+                },
+            ),
+            description="Validation error.",
+        ),
+    },
+    examples=[
+        OpenApiExample(
+            "Staff registration payload",
+            value={
+                "first_name": "Sara",
+                "last_name": "Karimi",
+                "national_code": "1234567890",
+                "mobile_number": "09129876543",
+                "center_id": "CTR-001",
+                "password": "Strong#Pass1",
+            },
+            request_only=True,
+        )
+    ],
+)
 class MedicalStaffRegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -42,16 +135,132 @@ class MedicalStaffRegisterView(APIView):
         )
 
 
+_login_response = inline_serializer(
+    name="LoginResponse",
+    fields={
+        "refresh": serializers.CharField(),
+        "access": serializers.CharField(),
+        "user": inline_serializer(
+            name="LoginUser",
+            fields={
+                "id": serializers.IntegerField(),
+                "username": serializers.CharField(),
+                "role": serializers.ChoiceField(choices=UserRole.choices),
+            },
+        ),
+    },
+)
+
+
+@extend_schema(
+    tags=["auth"],
+    summary="Log in",
+    description=(
+        "Authenticate with `identifier` (national code) and `password`. "
+        "Returns a JWT access + refresh pair."
+    ),
+    request=LoginSerializer,
+    responses={
+        200: _login_response,
+        400: OpenApiResponse(description="Invalid credentials or inactive account."),
+    },
+    examples=[
+        OpenApiExample(
+            "Login payload",
+            value={"identifier": "0123456789", "password": "Strong#Pass1"},
+            request_only=True,
+        ),
+        OpenApiExample(
+            "Login response",
+            value={
+                "refresh": "eyJhbGciOi...refresh...",
+                "access": "eyJhbGciOi...access...",
+                "user": {"id": 1, "username": "0123456789", "role": "donor"},
+            },
+            response_only=True,
+        ),
+    ],
+)
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = LoginSerializer(
-            data=request.data, context={"request": request})
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         return Response(serializer.save())
 
 
+@extend_schema(
+    tags=["auth"],
+    summary="Refresh JWT access token",
+    description="Exchange a valid refresh token for a new access token.",
+    request=inline_serializer(
+        name="TokenRefreshRequest",
+        fields={"refresh": serializers.CharField()},
+    ),
+    responses={
+        200: inline_serializer(
+            name="TokenRefreshResponse",
+            fields={"access": serializers.CharField()},
+        ),
+        401: OpenApiResponse(description="Refresh token is invalid or expired."),
+    },
+    examples=[
+        OpenApiExample(
+            "Refresh payload",
+            value={"refresh": "eyJhbGciOi...refresh..."},
+            request_only=True,
+        )
+    ],
+)
+class TokenRefreshSchemaView(APIView):
+    """Schema-only view mirroring SimpleJWT's TokenRefreshView."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        pass
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["auth"],
+        summary="Get current account",
+        description="Return the authenticated user along with the role-specific profile.",
+        responses={
+            200: AccountMeSerializer,
+            401: OpenApiResponse(description="Authentication required."),
+        },
+    ),
+    patch=extend_schema(
+        tags=["auth"],
+        summary="Update current profile",
+        description=(
+            "Partially update the authenticated user's profile. "
+            "Donor and medical-staff profiles expose different fields."
+        ),
+        request=inline_serializer(
+            name="ProfileUpdate",
+            fields={
+                "first_name": serializers.CharField(required=False),
+                "last_name": serializers.CharField(required=False),
+                "mobile_number": serializers.CharField(required=False),
+                "blood_group": serializers.ChoiceField(
+                    choices=["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+                    required=False,
+                ),
+                "province": serializers.CharField(required=False),
+                "center_id": serializers.CharField(required=False),
+            },
+        ),
+        responses={
+            200: AccountMeSerializer,
+            400: OpenApiResponse(description="Validation error or unsupported role."),
+            401: OpenApiResponse(description="Authentication required."),
+        },
+    ),
+)
 class AccountMeView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -82,6 +291,12 @@ class AccountMeView(APIView):
         return Response(AccountMeSerializer(request.user).data)
 
 
+@extend_schema(
+    tags=["auth"],
+    summary="List medical centers",
+    description="Public list of all medical centers.",
+    responses={200: MedicalCenterSerializer(many=True)},
+)
 class MedicalCenterListView(APIView):
     permission_classes = [AllowAny]
 
