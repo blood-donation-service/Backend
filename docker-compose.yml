@@ -48,7 +48,7 @@ services:
     env_file:
       - .env
     environment:
-      DEBUG: "false"
+      DEBUG: "true"
       deploy: "true"
       DB_HOST: db
       DB_PORT: "5432"
@@ -68,12 +68,19 @@ services:
     volumes:
       - static_files:/app/A/staticfiles
       - media_files:/app/A/media
+    networks:
+      - default
+      - dokploy-network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
+
+networks:
+  dokploy-network:
+    external: true
 
 volumes:
   postgres_data:
