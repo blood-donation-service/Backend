@@ -35,3 +35,10 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(**acces_kwargs),
     "REFRESH_TOKEN_LIFETIME": timedelta(**refresh_kwargs),
 }
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Blood Donation API",
+    "DESCRIPTION": "API documentation for the Blood Donation backend.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}
