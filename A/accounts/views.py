@@ -339,26 +339,19 @@ class StaffRegistrationRequestListView(APIView):
         return Response(serializer.data)
 
 
-class StaffRegistrationRequestAcceptView(APIView):
-    permission_classes = [IsAuthenticated, IsCenterAdmin]
+def _approve_registration_request(registration_request):
+    """Create User + MedicalStaffProfile from a pending request and delete it.
 
-    @transaction.atomic
-    def post(self, request, pk):
-        admin_profile = _get_admin_center(request.user)
-        if admin_profile is None:
-            return Response(
-                {"detail": "No medical center is linked to this admin."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            registration_request = StaffRegistrationRequest.objects.select_for_update().get(
-                pk=pk,
-                medical_center=admin_profile.medical_center,
-                status=StaffRegistrationStatus.PENDING,
-            )
-        except StaffRegistrationRequest.DoesNotExist:
-            raise NotFound("Registration request not found.")
+    Raises ValueError if the request is not pending.
+    """
+    if registration_request.status != StaffRegistrationStatus.PENDING:
+        raise ValueError("Registration request is not pending.")
 
+    with transaction.atomic():
+        registration_request = StaffRegistrationRequest.objects.select_for_update().get(
+            pk=registration_request.pk,
+            status=StaffRegistrationStatus.PENDING,
+        )
         user = User(
             username=registration_request.national_code,
             role=UserRole.MEDICAL_STAFF,
@@ -374,6 +367,29 @@ class StaffRegistrationRequestAcceptView(APIView):
             mobile_number=registration_request.mobile_number,
         )
         registration_request.delete()
+    return user
+
+
+class StaffRegistrationRequestAcceptView(APIView):
+    permission_classes = [IsAuthenticated, IsCenterAdmin]
+
+    def post(self, request, pk):
+        admin_profile = _get_admin_center(request.user)
+        if admin_profile is None:
+            return Response(
+                {"detail": "No medical center is linked to this admin."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            registration_request = StaffRegistrationRequest.objects.get(
+                pk=pk,
+                medical_center=admin_profile.medical_center,
+                status=StaffRegistrationStatus.PENDING,
+            )
+        except StaffRegistrationRequest.DoesNotExist:
+            raise NotFound("Registration request not found.")
+
+        user = _approve_registration_request(registration_request)
         return Response(
             {
                 "detail": "Registration request accepted.",

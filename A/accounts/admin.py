@@ -7,13 +7,26 @@ from .models import (
     MedicalCenterAdminProfile,
     MedicalStaffProfile,
     StaffRegistrationRequest,
+    StaffRegistrationStatus,
     User,
     UserRole,
 )
 
 
+def _is_center_admin(user):
+    return (
+        user.is_authenticated
+        and user.role == UserRole.CENTER_ADMIN
+        and hasattr(user, "center_admin_profile")
+    )
+
+
 def _admin_center_qs(request):
     return MedicalCenter.objects.filter(admin_profile__user=request.user)
+
+
+def _can_see_module(request):
+    return request.user.is_superuser or _is_center_admin(request.user)
 
 
 @admin.register(User)
@@ -41,6 +54,16 @@ class MedicalCenterAdmin(admin.ModelAdmin):
         if request.user.is_superuser:
             return qs
         return qs.filter(admin_profile__user=request.user)
+
+    def has_module_permission(self, request):
+        return _can_see_module(request)
+
+    def has_view_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+        if obj is None:
+            return True
+        return _admin_center_qs(request).filter(pk=obj.pk).exists()
 
     def has_add_permission(self, request):
         return request.user.is_superuser
@@ -80,6 +103,16 @@ class MedicalStaffProfileAdmin(admin.ModelAdmin):
         if request.user.is_superuser:
             return qs
         return qs.filter(medical_center__admin_profile__user=request.user)
+
+    def has_module_permission(self, request):
+        return _can_see_module(request)
+
+    def has_view_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+        if obj is None:
+            return True
+        return _admin_center_qs(request).filter(pk=obj.medical_center_id).exists()
 
     def has_add_permission(self, request):
         return request.user.is_superuser
@@ -151,12 +184,23 @@ class StaffRegistrationRequestAdmin(admin.ModelAdmin):
         "medical_center__center_id",
     )
     readonly_fields = ("password_hash", "created_at", "updated_at")
+    actions = ["accept_selected", "reject_selected"]
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         if request.user.is_superuser:
             return qs
         return qs.filter(medical_center__admin_profile__user=request.user)
+
+    def has_module_permission(self, request):
+        return _can_see_module(request)
+
+    def has_view_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+        if obj is None:
+            return True
+        return _admin_center_qs(request).filter(pk=obj.medical_center_id).exists()
 
     def has_add_permission(self, request):
         return False
@@ -174,3 +218,38 @@ class StaffRegistrationRequestAdmin(admin.ModelAdmin):
         if obj is None:
             return True
         return _admin_center_qs(request).filter(pk=obj.medical_center_id).exists()
+
+    @admin.action(description="Accept selected registration requests")
+    def accept_selected(self, request, queryset):
+        from .views import _approve_registration_request  # local import to avoid cycle
+
+        accepted = 0
+        skipped = 0
+        for registration_request in queryset.filter(
+            status=StaffRegistrationStatus.PENDING
+        ):
+            if not self.has_delete_permission(request, registration_request):
+                skipped += 1
+                continue
+            _approve_registration_request(registration_request)
+            accepted += 1
+        if accepted:
+            self.message_user(request, f"Accepted {accepted} request(s).")
+        if skipped:
+            self.message_user(
+                request,
+                f"Skipped {skipped} request(s) (not pending or not in your center).",
+            )
+
+    @admin.action(description="Reject selected registration requests")
+    def reject_selected(self, request, queryset):
+        rejected = 0
+        for registration_request in queryset.filter(
+            status=StaffRegistrationStatus.PENDING
+        ):
+            if not self.has_delete_permission(request, registration_request):
+                continue
+            registration_request.delete()
+            rejected += 1
+        if rejected:
+            self.message_user(request, f"Rejected {rejected} request(s).")
