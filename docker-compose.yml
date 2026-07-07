@@ -68,6 +68,7 @@ services:
     volumes:
       - static_files:/app/A/staticfiles
       - media_files:/app/A/media
+      - django_logs:/app/django.log
     expose:
       - "8000"
     healthcheck:
@@ -101,3 +102,4 @@ volumes:
   rabbitmq_data:
   static_files:
   media_files:
+  django_logs:
