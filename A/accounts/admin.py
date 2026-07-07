@@ -219,6 +219,55 @@ class StaffRegistrationRequestAdmin(admin.ModelAdmin):
             return True
         return _admin_center_qs(request).filter(pk=obj.medical_center_id).exists()
 
+    def save_model(self, request, obj, form, change):
+        new_status = obj.status
+        old_status = (
+            StaffRegistrationRequest.objects.get(pk=obj.pk).status
+            if change and obj.pk
+            else None
+        )
+
+        if (
+            change
+            and old_status == StaffRegistrationStatus.PENDING
+            and new_status == StaffRegistrationStatus.APPROVED
+        ):
+            if not self.has_delete_permission(request, obj):
+                self.message_user(
+                    request,
+                    "You can only approve requests for your own medical center.",
+                    level="error",
+                )
+                return
+            from .views import _approve_registration_request  # avoid import cycle
+
+            _approve_registration_request(obj)
+            self.message_user(
+                request,
+                f"Approved registration for {obj.first_name} {obj.last_name}. "
+                f"User and medical staff profile created.",
+            )
+            return
+
+        if (
+            change
+            and old_status == StaffRegistrationStatus.PENDING
+            and new_status == StaffRegistrationStatus.REJECTED
+        ):
+            if not self.has_delete_permission(request, obj):
+                self.message_user(
+                    request,
+                    "You can only reject requests for your own medical center.",
+                    level="error",
+                )
+                return
+            full_name = f"{obj.first_name} {obj.last_name}"
+            obj.delete()
+            self.message_user(request, f"Rejected registration for {full_name}.")
+            return
+
+        super().save_model(request, obj, form, change)
+
     @admin.action(description="Accept selected registration requests")
     def accept_selected(self, request, queryset):
         from .views import _approve_registration_request  # local import to avoid cycle
