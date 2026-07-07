@@ -241,10 +241,19 @@ class StaffRegistrationRequestAdmin(admin.ModelAdmin):
                 return
             from .views import _approve_registration_request  # avoid import cycle
 
-            _approve_registration_request(obj)
+            full_name = f"{obj.first_name} {obj.last_name}"
+            user = _approve_registration_request(obj)
+            if user is None:
+                self.message_user(
+                    request,
+                    f"Could not approve registration for {full_name}: "
+                    f"the request is no longer pending.",
+                    level="error",
+                )
+                return
             self.message_user(
                 request,
-                f"Approved registration for {obj.first_name} {obj.last_name}. "
+                f"Approved registration for {full_name}. "
                 f"User and medical staff profile created.",
             )
             return

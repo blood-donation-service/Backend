@@ -342,32 +342,32 @@ class StaffRegistrationRequestListView(APIView):
 def _approve_registration_request(registration_request):
     """Create User + MedicalStaffProfile from a pending request and delete it.
 
-    Raises ValueError if the request is not pending.
+    Returns the created User, or None if the request is not pending / no longer exists.
     """
-    if registration_request.status != StaffRegistrationStatus.PENDING:
-        raise ValueError("Registration request is not pending.")
-
-    with transaction.atomic():
-        registration_request = StaffRegistrationRequest.objects.select_for_update().get(
-            pk=registration_request.pk,
-            status=StaffRegistrationStatus.PENDING,
-        )
-        user = User(
-            username=registration_request.national_code,
-            role=UserRole.MEDICAL_STAFF,
-        )
-        user.password = registration_request.password_hash
-        user.save()
-        MedicalStaffProfile.objects.create(
-            user=user,
-            medical_center=registration_request.medical_center,
-            first_name=registration_request.first_name,
-            last_name=registration_request.last_name,
-            national_code=registration_request.national_code,
-            mobile_number=registration_request.mobile_number,
-        )
-        registration_request.delete()
-    return user
+    try:
+        with transaction.atomic():
+            pending = StaffRegistrationRequest.objects.select_for_update().get(
+                pk=registration_request.pk,
+                status=StaffRegistrationStatus.PENDING,
+            )
+            user = User(
+                username=pending.national_code,
+                role=UserRole.MEDICAL_STAFF,
+            )
+            user.password = pending.password_hash
+            user.save()
+            MedicalStaffProfile.objects.create(
+                user=user,
+                medical_center=pending.medical_center,
+                first_name=pending.first_name,
+                last_name=pending.last_name,
+                national_code=pending.national_code,
+                mobile_number=pending.mobile_number,
+            )
+            pending.delete()
+        return user
+    except StaffRegistrationRequest.DoesNotExist:
+        return None
 
 
 class StaffRegistrationRequestAcceptView(APIView):
@@ -390,6 +390,8 @@ class StaffRegistrationRequestAcceptView(APIView):
             raise NotFound("Registration request not found.")
 
         user = _approve_registration_request(registration_request)
+        if user is None:
+            raise NotFound("Registration request is no longer pending.")
         return Response(
             {
                 "detail": "Registration request accepted.",
