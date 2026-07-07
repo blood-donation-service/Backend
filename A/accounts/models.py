@@ -1,3 +1,4 @@
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
@@ -7,6 +8,7 @@ from django.db import models
 class UserRole(models.TextChoices):
     DONOR = "donor", "Donor"
     MEDICAL_STAFF = "medical_staff", "Medical staff"
+    CENTER_ADMIN="admin","Admin"
 
 
 class User(AbstractUser):
@@ -74,7 +76,7 @@ class MedicalCenter(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
     class Meta:
         ordering = ["name"]
 
@@ -166,3 +168,86 @@ class DonorProfile(models.Model):
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.national_code})"
+
+
+class MedicalCenterAdminProfile(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="center_admin_profile",
+    )
+    medical_center = models.OneToOneField(
+        MedicalCenter,
+        on_delete=models.CASCADE,
+        related_name="admin_profile",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        super().clean()
+        if self.user_id and self.user.role != UserRole.CENTER_ADMIN:
+            raise ValidationError(
+                {"user": "Medical center admin profile must belong to a center admin user."}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.medical_center.name}"
+
+
+class StaffRegistrationStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+
+
+class StaffRegistrationRequest(models.Model):
+    medical_center = models.ForeignKey(
+        MedicalCenter,
+        on_delete=models.CASCADE,
+        related_name="staff_registration_requests",
+    )
+    first_name = models.CharField(max_length=150)
+    last_name = models.CharField(max_length=150)
+    national_code = models.CharField(
+        max_length=10,
+        validators=[national_code_validator],
+        db_index=True,
+    )
+    mobile_number = models.CharField(
+        max_length=11,
+        validators=[mobile_validator],
+    )
+    password_hash = models.CharField(max_length=256)
+    status = models.CharField(
+        max_length=16,
+        choices=StaffRegistrationStatus.choices,
+        default=StaffRegistrationStatus.PENDING,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["national_code"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_staff_request_national_code",
+            ),
+            models.UniqueConstraint(
+                fields=["mobile_number"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_staff_request_mobile_number",
+            ),
+        ]
+
+    def set_password(self, raw_password):
+        self.password_hash = make_password(raw_password)
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name} -> {self.medical_center.name} ({self.status})"

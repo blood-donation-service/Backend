@@ -11,6 +11,7 @@ from .models import (
     DonorProfile,
     MedicalCenter,
     MedicalStaffProfile,
+    StaffRegistrationRequest,
     User,
     UserRole,
 )
@@ -107,6 +108,32 @@ class MedicalStaffProfileSerializer(serializers.ModelSerializer):
                             "created_at", "updated_at")
 
 
+class StaffRegistrationRequestSerializer(serializers.ModelSerializer):
+    medical_center = MedicalCenterSerializer(read_only=True)
+    center_id = serializers.SlugRelatedField(
+        slug_field="center_id",
+        queryset=MedicalCenter.objects.all(),
+        source="medical_center",
+        write_only=True,
+    )
+
+    class Meta:
+        model = StaffRegistrationRequest
+        fields = (
+            "id",
+            "first_name",
+            "last_name",
+            "national_code",
+            "mobile_number",
+            "center_id",
+            "medical_center",
+            "status",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "status", "medical_center", "created_at", "updated_at")
+
+
 class DonorRegisterSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
@@ -158,6 +185,28 @@ class MedicalStaffRegisterSerializer(serializers.Serializer):
         if User.objects.filter(username=value).exists():
             raise serializers.ValidationError(
                 "A user with this national code exists.")
+        if MedicalStaffProfile.objects.filter(national_code=value).exists():
+            raise serializers.ValidationError(
+                "A medical staff with this national code exists.")
+        if StaffRegistrationRequest.objects.filter(
+            national_code=value, status="pending"
+        ).exists():
+            raise serializers.ValidationError(
+                "A pending staff registration request exists for this national code.")
+        return value
+
+    def validate_mobile_number(self, value):
+        if DonorProfile.objects.filter(mobile_number=value).exists():
+            raise serializers.ValidationError(
+                "A donor with this mobile number exists.")
+        if MedicalStaffProfile.objects.filter(mobile_number=value).exists():
+            raise serializers.ValidationError(
+                "A medical staff with this mobile number exists.")
+        if StaffRegistrationRequest.objects.filter(
+            mobile_number=value, status="pending"
+        ).exists():
+            raise serializers.ValidationError(
+                "A pending staff registration request exists for this mobile number.")
         return value
 
     def validate_center_id(self, value):
@@ -172,23 +221,16 @@ class MedicalStaffRegisterSerializer(serializers.Serializer):
         password = validated_data.pop("password")
         medical_center = MedicalCenter.objects.get(
             center_id=validated_data.pop("center_id"))
-        user = User.objects.create_user(
-            username=validated_data["national_code"],
-            password=password,
-            role=UserRole.MEDICAL_STAFF,
-        )
-        profile = MedicalStaffProfile.objects.create(
-            user=user,
+        request = StaffRegistrationRequest(
             medical_center=medical_center,
             **validated_data,
         )
-        return profile
+        request.set_password(password)
+        request.save()
+        return request
 
     def to_representation(self, instance):
-        return {
-            "user": UserSerializer(instance.user).data,
-            "profile": MedicalStaffProfileSerializer(instance).data,
-        }
+        return StaffRegistrationRequestSerializer(instance).data
 
 
 class LoginSerializer(serializers.Serializer):
@@ -230,16 +272,3 @@ class AccountMeSerializer(serializers.Serializer):
             "profile": profile,
         }
 
-
-class MedicalCenterSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = MedicalCenter
-        fields = [
-            "id",
-            "center_id",
-            "name",
-            "address",
-            "phone_number",
-            "latitude",
-            "longitude",
-        ]
