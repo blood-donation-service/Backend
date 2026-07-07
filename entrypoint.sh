@@ -13,5 +13,9 @@ python manage.py migrate --noinput
 echo "[entrypoint] Collecting static files..."
 python manage.py collectstatic --noinput || true
 
+touch /app/django.log
+chown www-data:www-data /app/django.log 2>/dev/null || true
+chmod 664 /app/django.log
+
 echo "[entrypoint] Starting: $@"
 exec "$@"

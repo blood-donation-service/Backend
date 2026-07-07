@@ -5,13 +5,22 @@ from drf_spectacular.utils import (
     extend_schema_view,
     inline_serializer,
 )
-from drf_spectacular.types import OpenApiTypes
-from rest_framework import status, serializers
+from rest_framework import serializers, status
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import MedicalCenter, UserRole
+from django.db import transaction
+
+from .models import (
+    MedicalCenter,
+    MedicalStaffProfile,
+    StaffRegistrationRequest,
+    StaffRegistrationStatus,
+    User,
+    UserRole,
+)
 from .serializers import (
     AccountMeSerializer,
     DonorProfileSerializer,
@@ -20,7 +29,9 @@ from .serializers import (
     MedicalCenterSerializer,
     MedicalStaffProfileSerializer,
     MedicalStaffRegisterSerializer,
+    StaffRegistrationRequestSerializer,
 )
+from .permissions import IsCenterAdmin
 
 
 @extend_schema(
@@ -128,9 +139,9 @@ class MedicalStaffRegisterView(APIView):
     def post(self, request):
         serializer = MedicalStaffRegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        profile = serializer.save()
+        registration_request = serializer.save()
         return Response(
-            MedicalStaffRegisterSerializer(profile).data,
+            MedicalStaffRegisterSerializer(registration_request).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -304,3 +315,113 @@ class MedicalCenterListView(APIView):
         centers = MedicalCenter.objects.all()
         serializer = MedicalCenterSerializer(centers, many=True)
         return Response(serializer.data)
+
+
+def _get_admin_center(user):
+    return getattr(user, "center_admin_profile", None)
+
+
+class StaffRegistrationRequestListView(APIView):
+    permission_classes = [IsAuthenticated, IsCenterAdmin]
+
+    def get(self, request):
+        admin_profile = _get_admin_center(request.user)
+        if admin_profile is None:
+            return Response(
+                {"detail": "No medical center is linked to this admin."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        requests = StaffRegistrationRequest.objects.filter(
+            medical_center=admin_profile.medical_center,
+            status=StaffRegistrationStatus.PENDING,
+        )
+        serializer = StaffRegistrationRequestSerializer(requests, many=True)
+        return Response(serializer.data)
+
+
+def _approve_registration_request(registration_request):
+    """Create User + MedicalStaffProfile from a pending request and delete it.
+
+    Returns the created User, or None if the request is not pending / no longer exists.
+    """
+    try:
+        with transaction.atomic():
+            pending = StaffRegistrationRequest.objects.select_for_update().get(
+                pk=registration_request.pk,
+                status=StaffRegistrationStatus.PENDING,
+            )
+            user = User(
+                username=pending.national_code,
+                role=UserRole.MEDICAL_STAFF,
+            )
+            user.password = pending.password_hash
+            user.save()
+            MedicalStaffProfile.objects.create(
+                user=user,
+                medical_center=pending.medical_center,
+                first_name=pending.first_name,
+                last_name=pending.last_name,
+                national_code=pending.national_code,
+                mobile_number=pending.mobile_number,
+            )
+            pending.delete()
+        return user
+    except StaffRegistrationRequest.DoesNotExist:
+        return None
+
+
+class StaffRegistrationRequestAcceptView(APIView):
+    permission_classes = [IsAuthenticated, IsCenterAdmin]
+
+    def post(self, request, pk):
+        admin_profile = _get_admin_center(request.user)
+        if admin_profile is None:
+            return Response(
+                {"detail": "No medical center is linked to this admin."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            registration_request = StaffRegistrationRequest.objects.get(
+                pk=pk,
+                medical_center=admin_profile.medical_center,
+                status=StaffRegistrationStatus.PENDING,
+            )
+        except StaffRegistrationRequest.DoesNotExist:
+            raise NotFound("Registration request not found.")
+
+        user = _approve_registration_request(registration_request)
+        if user is None:
+            raise NotFound("Registration request is no longer pending.")
+        return Response(
+            {
+                "detail": "Registration request accepted.",
+                "username": user.username,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class StaffRegistrationRequestRejectView(APIView):
+    permission_classes = [IsAuthenticated, IsCenterAdmin]
+
+    def post(self, request, pk):
+        admin_profile = _get_admin_center(request.user)
+        if admin_profile is None:
+            return Response(
+                {"detail": "No medical center is linked to this admin."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            registration_request = StaffRegistrationRequest.objects.get(
+                pk=pk,
+                medical_center=admin_profile.medical_center,
+                status=StaffRegistrationStatus.PENDING,
+            )
+        except StaffRegistrationRequest.DoesNotExist:
+            raise NotFound("Registration request not found.")
+
+        registration_request.delete()
+        return Response(
+            {"detail": "Registration request rejected."},
+            status=status.HTTP_200_OK,
+        )
