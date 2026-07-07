@@ -176,11 +176,17 @@ class MedicalCenterAdminProfile(models.Model):
         on_delete=models.CASCADE,
         related_name="center_admin_profile",
     )
+    
     medical_center = models.OneToOneField(
         MedicalCenter,
         on_delete=models.CASCADE,
         related_name="admin_profile",
     )
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    national_code = models.CharField(max_length=20, unique=True)
+    mobile_number = models.CharField(max_length=20)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

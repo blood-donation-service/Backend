@@ -47,7 +47,8 @@ class UserAdmin(DjangoUserAdmin):
 @admin.register(MedicalCenter)
 class MedicalCenterAdmin(admin.ModelAdmin):
     list_display = ("name", "center_id", "phone_number", "postal_code")
-    search_fields = ("name", "center_id", "phone_number", "postal_code", "address")
+    search_fields = ("name", "center_id", "phone_number",
+                     "postal_code", "address")
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -143,7 +144,8 @@ class DonorProfileAdmin(admin.ModelAdmin):
         "province",
     )
     list_filter = ("blood_group", "province")
-    search_fields = ("first_name", "last_name", "national_code", "mobile_number")
+    search_fields = ("first_name", "last_name",
+                     "national_code", "mobile_number")
 
     def has_module_permission(self, request):
         return request.user.is_superuser
@@ -151,15 +153,41 @@ class DonorProfileAdmin(admin.ModelAdmin):
 
 @admin.register(MedicalCenterAdminProfile)
 class MedicalCenterAdminProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "medical_center", "created_at")
-    list_filter = ("medical_center",)
-    search_fields = (
-        "user__username",
-        "medical_center__name",
-        "medical_center__center_id",
+    list_display = (
+        "first_name",
+        "last_name",
+        "national_code",
+        "mobile_number",
+        "medical_center",
+        "user",
     )
 
+    search_fields = (
+        "first_name",
+        "last_name",
+        "national_code",
+        "mobile_number",
+        "user__username",
+        "medical_center__name",
+    )
+
+    list_filter = ("medical_center",)
+
+    autocomplete_fields = ("user", "medical_center")
+
     def has_module_permission(self, request):
+        return request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
         return request.user.is_superuser
 
 
@@ -272,7 +300,8 @@ class StaffRegistrationRequestAdmin(admin.ModelAdmin):
                 return
             full_name = f"{obj.first_name} {obj.last_name}"
             obj.delete()
-            self.message_user(request, f"Rejected registration for {full_name}.")
+            self.message_user(
+                request, f"Rejected registration for {full_name}.")
             return
 
         super().save_model(request, obj, form, change)
