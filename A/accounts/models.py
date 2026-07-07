@@ -16,6 +16,11 @@ class User(AbstractUser):
 
     REQUIRED_FIELDS = ["role"]
 
+    def save(self, *args, **kwargs):
+        if self.role == UserRole.MEDICAL_STAFF and self.is_staff:
+            self.is_staff = False
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
 
@@ -192,6 +197,9 @@ class MedicalCenterAdminProfile(models.Model):
             )
 
     def save(self, *args, **kwargs):
+        if self.user_id and not self.user.is_staff and self.user.role == UserRole.CENTER_ADMIN:
+            self.user.is_staff = True
+            self.user.save(update_fields=["is_staff"])
         self.full_clean()
         return super().save(*args, **kwargs)
 

@@ -28,6 +28,7 @@ def create_center_admin(center, username="admin-1", **overrides):
         username=username,
         password="Strong!Pass123",
         role=UserRole.CENTER_ADMIN,
+        is_staff=True,
     )
     return MedicalCenterAdminProfile.objects.create(
         user=user, medical_center=center, **overrides
