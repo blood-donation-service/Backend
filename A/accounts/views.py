@@ -53,6 +53,9 @@ from .permissions import IsCenterAdmin
                     "national_code": serializers.ListField(
                         child=serializers.CharField(), required=False
                     ),
+                    "mobile_number": serializers.ListField(
+                        child=serializers.CharField(), required=False
+                    ),
                     "password": serializers.ListField(
                         child=serializers.CharField(), required=False
                     ),
