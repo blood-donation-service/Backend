@@ -52,3 +52,21 @@ class SearchViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["blood_group"], "A+")
+
+    def test_search_endpoint_returns_all_when_no_filters(self):
+        create_medical_center(center_id="SEARCH-4")
+        BloodRequest.objects.create(
+            medical_center=create_medical_center(center_id="SEARCH-5", province="Mashhad"),
+            title="Urgent O- needed",
+            blood_group="O-",
+            total_capacity=2,
+        )
+        response = self.client.get("/search/blood-requests/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(response.data), 1)
+
+    def test_search_endpoint_returns_empty_when_no_matches(self):
+        create_medical_center(center_id="SEARCH-6", province="Tehran")
+        response = self.client.get("/search/blood-requests/?province=Isfahan")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, [])

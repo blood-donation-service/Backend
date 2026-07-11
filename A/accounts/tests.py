@@ -316,6 +316,34 @@ class AccountAuthAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["profile"]["province"], "Alborz")
 
+    def test_account_me_patch_returns_400_for_unsupported_role(self):
+        center = create_medical_center(center_id="CENTER-3")
+        admin_profile = create_center_admin(center, username="admin-3")
+        self.client.force_authenticate(user=admin_profile.user)
+        response = self.client.patch(
+            "/api/accounts/me/",
+            {"first_name": "New"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_medical_center_list_view_returns_centers(self):
+        create_medical_center(center_id="CENTER-4")
+        response = self.client.get("/api/auth/centers/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(response.data), 1)
+
+    def test_admin_without_center_cannot_list_requests(self):
+        user = User.objects.create_user(
+            username="admin-no-center",
+            password="Strong!Pass123",
+            role=UserRole.CENTER_ADMIN,
+            is_staff=True,
+        )
+        self.client.force_authenticate(user=user)
+        response = self.client.get("/api/staff-registration-requests/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def _submit_staff_request(self, national_code, mobile_number, center_id="CENTER-1"):
         return self.client.post(
             "/api/auth/register/staff/",

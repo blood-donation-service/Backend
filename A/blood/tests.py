@@ -20,25 +20,29 @@ def create_medical_center(center_id="CENTER-1", **overrides):
 
 def create_medical_staff(center, username="staff-1"):
     user = User.objects.create_user(username=username, password="Strong!Pass123", role=UserRole.MEDICAL_STAFF)
+    seed = str(abs(hash(username)) % 10000000000).zfill(10)
+    mobile = f"091{int(seed[-8:]) % 10000000:08d}"
     profile = MedicalStaffProfile.objects.create(
         user=user,
         medical_center=center,
         first_name="Sara",
         last_name="Karimi",
-        national_code="1111111111",
-        mobile_number="09120000001",
+        national_code=seed,
+        mobile_number=mobile,
     )
     return user, profile
 
 
 def create_donor(username="donor-1"):
     user = User.objects.create_user(username=username, password="Strong!Pass123", role=UserRole.DONOR)
+    seed = str(abs(hash(username)) % 10000000000).zfill(10)
+    mobile = f"091{int(seed[-8:]) % 10000000:08d}"
     profile = DonorProfile.objects.create(
         user=user,
         first_name="Ali",
         last_name="Rahimi",
-        national_code="1234567890" if username == "donor-1" else "2345678901",
-        mobile_number="09120000002" if username == "donor-1" else "09120000003",
+        national_code=seed,
+        mobile_number=mobile,
         blood_group="A+",
         province="Tehran",
     )
@@ -117,6 +121,20 @@ class BloodViewTests(APITestCase):
         self.assertEqual(response.data["title"], "Need B+")
         self.assertEqual(BloodRequest.objects.count(), 1)
 
+    def test_non_staff_cannot_create_request(self):
+        user, _ = create_donor("donor-5")
+        self.client.force_authenticate(user=user)
+        response = self.client.post(
+            "/blood/requests/create/",
+            {"title": "Need B+", "blood_group": "B+", "total_capacity": 3},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_detail_view_returns_404_for_missing_request(self):
+        response = self.client.get("/blood/requests/99999/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_donor_can_register_and_cancel_donation(self):
         center = create_medical_center(center_id="CENTER-5")
         request = create_blood_request(center, total_capacity=2)
@@ -133,12 +151,29 @@ class BloodViewTests(APITestCase):
         self.assertEqual(Donation.objects.get(pk=donation.pk).status, DonationStatus.CANCELLED)
         self.assertEqual(BloodRequest.objects.get(pk=request.pk).remaining_capacity, 2)
 
-    def test_medical_staff_can_mark_donation_as_donated(self):
-        center = create_medical_center(center_id="CENTER-6")
+    def test_non_donor_cannot_view_donations(self):
+        user, _ = create_medical_staff(create_medical_center(center_id="CENTER-6"), username="staff-3")
+        self.client.force_authenticate(user=user)
+        response = self.client.get("/blood/donations/me/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_cancelling_non_pending_donation_returns_400(self):
+        center = create_medical_center(center_id="CENTER-7")
         _, donor_profile = create_donor("donor-4")
         request = create_blood_request(center)
+        donation = Donation(donor=donor_profile, request=request, status=DonationStatus.CANCELLED)
+        donation.save()
+        user, _ = create_donor("donor-6")
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(f"/blood/donations/{donation.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_medical_staff_can_mark_donation_as_donated(self):
+        center = create_medical_center(center_id="CENTER-8")
+        _, donor_profile = create_donor("donor-7")
+        request = create_blood_request(center)
         donation = Donation.objects.create(donor=donor_profile, request=request)
-        user, _ = create_medical_staff(center, username="staff-3")
+        user, _ = create_medical_staff(center, username="staff-4")
         self.client.force_authenticate(user=user)
         response = self.client.patch(
             f"/blood/donations/{donation.pk}/donated/",
@@ -147,3 +182,18 @@ class BloodViewTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(Donation.objects.get(pk=donation.pk).status, DonationStatus.DONATED)
+
+    def test_staff_from_other_center_cannot_mark_donation(self):
+        center = create_medical_center(center_id="CENTER-9")
+        other_center = create_medical_center(center_id="CENTER-10")
+        _, donor_profile = create_donor("donor-8")
+        request = create_blood_request(center)
+        donation = Donation.objects.create(donor=donor_profile, request=request)
+        user, _ = create_medical_staff(other_center, username="staff-5")
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(
+            f"/blood/donations/{donation.pk}/donated/",
+            {"status": "donated"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

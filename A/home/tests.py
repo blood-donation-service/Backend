@@ -7,3 +7,8 @@ class HomeViewTests(APITestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["name"], "blood-donation-api")
+
+    def test_home_endpoint_is_public(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("name", response.data)
