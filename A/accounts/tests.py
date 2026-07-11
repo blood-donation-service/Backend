@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError
+from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -9,6 +11,12 @@ from .models import (
     StaffRegistrationRequest,
     User,
     UserRole,
+)
+from .serializers import (
+    AccountMeSerializer,
+    DonorRegisterSerializer,
+    LoginSerializer,
+    MedicalStaffRegisterSerializer,
 )
 
 
@@ -30,9 +38,125 @@ def create_center_admin(center, username="admin-1", **overrides):
         role=UserRole.CENTER_ADMIN,
         is_staff=True,
     )
+    defaults = {
+        "first_name": "Admin",
+        "last_name": "User",
+        "national_code": str(sum(ord(ch) for ch in username) + 1000),
+        "mobile_number": "09120000000",
+    }
+    defaults.update(overrides)
+    if "national_code" not in overrides:
+        defaults["national_code"] = str(sum(ord(ch) for ch in username) + 1000)
+    if "mobile_number" not in overrides:
+        defaults["mobile_number"] = f"091200000{len(username) % 10}"
     return MedicalCenterAdminProfile.objects.create(
-        user=user, medical_center=center, **overrides
+        user=user, medical_center=center, **defaults
     )
+
+
+class AccountModelTests(TestCase):
+    def test_user_str_returns_username_and_role(self):
+        user = User.objects.create_user(
+            username="1234567890",
+            password="Strong!Pass123",
+            role=UserRole.DONOR,
+        )
+        self.assertEqual(str(user), "1234567890 (Donor)")
+
+    def test_medical_staff_profile_clean_requires_medical_staff_user(self):
+        center = create_medical_center()
+        user = User.objects.create_user(
+            username="1111111111",
+            password="Strong!Pass123",
+            role=UserRole.DONOR,
+        )
+        profile = MedicalStaffProfile(
+            user=user,
+            medical_center=center,
+            first_name="Ali",
+            last_name="Karimi",
+            national_code="1111111111",
+            mobile_number="09120000001",
+        )
+        with self.assertRaises(ValidationError):
+            profile.full_clean()
+
+    def test_center_admin_profile_save_marks_user_as_staff(self):
+        center = create_medical_center()
+        admin_profile = create_center_admin(center, username="admin-2")
+        self.assertTrue(admin_profile.user.is_staff)
+
+
+class AccountSerializerTests(TestCase):
+    def test_donor_register_serializer_creates_profile(self):
+        serializer = DonorRegisterSerializer(
+            data={
+                "first_name": "Ali",
+                "last_name": "Ahmadi",
+                "national_code": "1234567890",
+                "mobile_number": "09123456789",
+                "blood_group": "A+",
+                "province": "Tehran",
+                "password": "Strong!Pass123",
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        profile = serializer.save()
+        self.assertEqual(profile.user.role, UserRole.DONOR)
+        self.assertEqual(profile.blood_group, "A+")
+
+    def test_medical_staff_register_serializer_creates_request(self):
+        center = create_medical_center(center_id="CENTER-2")
+        serializer = MedicalStaffRegisterSerializer(
+            data={
+                "first_name": "Sara",
+                "last_name": "Karimi",
+                "national_code": "9876543210",
+                "mobile_number": "09121112233",
+                "center_id": center.center_id,
+                "password": "Strong!Pass123",
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        request = serializer.save()
+        self.assertEqual(request.medical_center, center)
+        self.assertEqual(request.status, "pending")
+
+    def test_login_serializer_returns_token_payload(self):
+        user = User.objects.create_user(
+            username="2222222222",
+            password="Strong!Pass123",
+            role=UserRole.DONOR,
+        )
+        serializer = LoginSerializer(
+            data={
+                "identifier": user.username,
+                "password": "Strong!Pass123",
+            },
+            context={"request": None},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        payload = serializer.save()
+        self.assertIn("access", payload)
+        self.assertIn("refresh", payload)
+
+    def test_account_me_serializer_includes_profile_data(self):
+        user = User.objects.create_user(
+            username="3333333333",
+            password="Strong!Pass123",
+            role=UserRole.DONOR,
+        )
+        DonorProfile.objects.create(
+            user=user,
+            first_name="Mina",
+            last_name="Rezai",
+            national_code="3333333333",
+            mobile_number="09120000003",
+            blood_group="O+",
+            province="Mashhad",
+        )
+        serializer = AccountMeSerializer(user)
+        self.assertEqual(serializer.data["profile"]["province"], "Mashhad")
 
 
 class AccountAuthAPITests(APITestCase):
@@ -92,18 +216,10 @@ class AccountAuthAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["status"], "pending")
-        self.assertEqual(
-            response.data["medical_center"]["center_id"], "CENTER-1"
-        )
-        self.assertTrue(
-            StaffRegistrationRequest.objects.filter(
-                national_code="9876543210"
-            ).exists()
-        )
+        self.assertEqual(response.data["medical_center"]["center_id"], "CENTER-1")
+        self.assertTrue(StaffRegistrationRequest.objects.filter(national_code="9876543210").exists())
         self.assertFalse(User.objects.filter(username="9876543210").exists())
-        self.assertFalse(
-            MedicalStaffProfile.objects.filter(national_code="9876543210").exists()
-        )
+        self.assertFalse(MedicalStaffProfile.objects.filter(national_code="9876543210").exists())
 
     def test_staff_registration_rejects_unknown_center(self):
         response = self.client.post(
@@ -200,9 +316,7 @@ class AccountAuthAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["profile"]["province"], "Alborz")
 
-    def _submit_staff_request(
-        self, national_code, mobile_number, center_id="CENTER-1"
-    ):
+    def _submit_staff_request(self, national_code, mobile_number, center_id="CENTER-1"):
         return self.client.post(
             "/api/auth/register/staff/",
             {
@@ -222,9 +336,7 @@ class AccountAuthAPITests(APITestCase):
         create_center_admin(center, username="admin-1")
         create_center_admin(other_center, username="admin-2")
 
-        self._submit_staff_request(
-            national_code="1111111111", mobile_number="09120000001"
-        )
+        self._submit_staff_request(national_code="1111111111", mobile_number="09120000001")
         self._submit_staff_request(
             national_code="2222222222",
             mobile_number="09120000002",
@@ -242,93 +354,51 @@ class AccountAuthAPITests(APITestCase):
     def test_center_admin_can_accept_request(self):
         center = create_medical_center(center_id="CENTER-1")
         admin_profile = create_center_admin(center, username="admin-1")
-        self._submit_staff_request(
-            national_code="3333333333", mobile_number="09120000003"
-        )
-        registration_request = StaffRegistrationRequest.objects.get(
-            national_code="3333333333"
-        )
+        self._submit_staff_request(national_code="3333333333", mobile_number="09120000003")
+        registration_request = StaffRegistrationRequest.objects.get(national_code="3333333333")
 
         self.client.force_authenticate(user=admin_profile.user)
-        response = self.client.post(
-            f"/api/staff-registration-requests/{registration_request.pk}/accept/"
-        )
+        response = self.client.post(f"/api/staff-registration-requests/{registration_request.pk}/accept/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(
-            User.objects.filter(
-                username="3333333333", role=UserRole.MEDICAL_STAFF
-            ).exists()
-        )
-        self.assertTrue(
-            MedicalStaffProfile.objects.filter(
-                national_code="3333333333", medical_center=center
-            ).exists()
-        )
-        self.assertFalse(
-            StaffRegistrationRequest.objects.filter(
-                national_code="3333333333"
-            ).exists()
-        )
+        self.assertTrue(User.objects.filter(username="3333333333", role=UserRole.MEDICAL_STAFF).exists())
+        self.assertTrue(MedicalStaffProfile.objects.filter(national_code="3333333333", medical_center=center).exists())
+        self.assertFalse(StaffRegistrationRequest.objects.filter(national_code="3333333333").exists())
 
     def test_center_admin_can_reject_request(self):
         center = create_medical_center(center_id="CENTER-1")
         admin_profile = create_center_admin(center, username="admin-1")
-        self._submit_staff_request(
-            national_code="4444444444", mobile_number="09120000004"
-        )
-        registration_request = StaffRegistrationRequest.objects.get(
-            national_code="4444444444"
-        )
+        self._submit_staff_request(national_code="4444444444", mobile_number="09120000004")
+        registration_request = StaffRegistrationRequest.objects.get(national_code="4444444444")
 
         self.client.force_authenticate(user=admin_profile.user)
-        response = self.client.post(
-            f"/api/staff-registration-requests/{registration_request.pk}/reject/"
-        )
+        response = self.client.post(f"/api/staff-registration-requests/{registration_request.pk}/reject/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertFalse(
-            StaffRegistrationRequest.objects.filter(
-                national_code="4444444444"
-            ).exists()
-        )
+        self.assertFalse(StaffRegistrationRequest.objects.filter(national_code="4444444444").exists())
         self.assertFalse(User.objects.filter(username="4444444444").exists())
 
     def test_center_admin_cannot_act_on_other_centers_request(self):
         my_center = create_medical_center(center_id="CENTER-1")
-        other_center = create_medical_center(center_id="CENTER-2")
+        create_medical_center(center_id="CENTER-2")
         admin_profile = create_center_admin(my_center, username="admin-1")
         self._submit_staff_request(
             national_code="5555555555",
             mobile_number="09120000005",
             center_id="CENTER-2",
         )
-        other_request = StaffRegistrationRequest.objects.get(
-            national_code="5555555555"
-        )
+        other_request = StaffRegistrationRequest.objects.get(national_code="5555555555")
 
         self.client.force_authenticate(user=admin_profile.user)
-        response = self.client.post(
-            f"/api/staff-registration-requests/{other_request.pk}/accept/"
-        )
+        response = self.client.post(f"/api/staff-registration-requests/{other_request.pk}/accept/")
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertTrue(
-            StaffRegistrationRequest.objects.filter(
-                national_code="5555555555"
-            ).exists()
-        )
+        self.assertTrue(StaffRegistrationRequest.objects.filter(national_code="5555555555").exists())
 
     def test_non_admin_cannot_list_or_act_on_requests(self):
-        center = create_medical_center(center_id="CENTER-1")
-        self._submit_staff_request(
-            national_code="6666666666", mobile_number="09120000006"
-        )
-        donor = User.objects.create_user(
-            username="1234567890",
-            password="Strong!Pass123",
-            role=UserRole.DONOR,
-        )
+        create_medical_center(center_id="CENTER-1")
+        self._submit_staff_request(national_code="6666666666", mobile_number="09120000006")
+        donor = User.objects.create_user(username="1234567890", password="Strong!Pass123", role=UserRole.DONOR)
 
         self.client.force_authenticate(user=donor)
         response = self.client.get("/api/staff-registration-requests/")
