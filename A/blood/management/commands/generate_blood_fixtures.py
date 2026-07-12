@@ -55,7 +55,6 @@ COMPATIBLE_DONORS = {
 }
 
 
-
 class Command(BaseCommand):
     help = "Generate BloodRequest and Donation fixtures."
 
@@ -87,16 +86,16 @@ class Command(BaseCommand):
             return
 
         titles = [
-            "Emergency Surgery",
-            "Trauma Patient",
-            "ICU Patient",
-            "Cancer Treatment",
-            "Blood Bank Refill",
-            "Scheduled Operation",
-            "Urgent Blood Need",
-            "Critical Patient",
-            "Accident Victim",
-            "Rare Blood Requirement",
+            "جراحی اورژانسی",
+            "بیمار ترومایی",
+            "بیمار بخش مراقبت‌های ویژه",
+            "درمان سرطان",
+            "تأمین مجدد بانک خون",
+            "عمل جراحی برنامه‌ریزی‌شده",
+            "نیاز فوری به خون",
+            "بیمار بدحال",
+            "مصدوم حادثه",
+            "نیاز به گروه خونی نادر",
         ]
 
         blood_groups = [bg[0] for bg in BloodGroup.choices]
