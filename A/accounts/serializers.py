@@ -152,6 +152,15 @@ class DonorRegisterSerializer(serializers.Serializer):
                 "A user with this national code exists.")
         return value
 
+    def validate_mobile_number(self, value):
+        if DonorProfile.objects.filter(mobile_number=value).exists():
+            raise serializers.ValidationError(
+                "A donor with this mobile number exists.")
+        if MedicalStaffProfile.objects.filter(mobile_number=value).exists():
+            raise serializers.ValidationError(
+                "A medical staff with this mobile number exists.")
+        return value
+
     @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop("password")
