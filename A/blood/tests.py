@@ -1,11 +1,33 @@
-<<<<<<< HEAD
-from django.test import TestCase
-from rest_framework import status
-from rest_framework.test import APITestCase
+import threading
 
-from accounts.models import DonorProfile, MedicalCenter, MedicalStaffProfile, User, UserRole
-from .models import BloodRequest, Donation, DonationStatus, RequestStatus
-from .serializers import BloodRequestCreateSerializer, BloodRequestSerializer, DonationSerializer, DonationStatusSerializer
+from django.contrib.auth import get_user_model
+from django.db import connections
+from django.test import TestCase, TransactionTestCase
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APIClient, APITestCase
+
+from accounts.models import (
+    BloodGroup,
+    DonorProfile,
+    MedicalCenter,
+    MedicalStaffProfile,
+    User,
+    UserRole,
+)
+from blood.models import (
+    BloodRequest,
+    Donation,
+    DonationStatus,
+    RequestStatus,
+)
+from blood.serializers import (
+    BloodRequestCreateSerializer,
+    BloodRequestSerializer,
+    DonationStatusSerializer,
+)
+
+User = get_user_model()
 
 
 def create_medical_center(center_id="CENTER-1", **overrides):
@@ -20,7 +42,11 @@ def create_medical_center(center_id="CENTER-1", **overrides):
 
 
 def create_medical_staff(center, username="staff-1"):
-    user = User.objects.create_user(username=username, password="Strong!Pass123", role=UserRole.MEDICAL_STAFF)
+    user = User.objects.create_user(
+        username=username,
+        password="Strong!Pass123",
+        role=UserRole.MEDICAL_STAFF,
+    )
     seed = str(abs(hash(username)) % 10000000000).zfill(10)
     mobile = f"091{int(seed[-8:]) % 10000000:08d}"
     profile = MedicalStaffProfile.objects.create(
@@ -35,7 +61,11 @@ def create_medical_staff(center, username="staff-1"):
 
 
 def create_donor(username="donor-1"):
-    user = User.objects.create_user(username=username, password="Strong!Pass123", role=UserRole.DONOR)
+    user = User.objects.create_user(
+        username=username,
+        password="Strong!Pass123",
+        role=UserRole.DONOR,
+    )
     seed = str(abs(hash(username)) % 10000000000).zfill(10)
     mobile = f"091{int(seed[-8:]) % 10000000:08d}"
     profile = DonorProfile.objects.create(
@@ -78,14 +108,20 @@ class BloodModelTests(TestCase):
         center = create_medical_center()
         _, donor_profile = create_donor("donor-2")
         request = create_blood_request(center)
-        donation = Donation(donor=donor_profile, request=request, status=DonationStatus.DONATED)
+        donation = Donation(
+            donor=donor_profile,
+            request=request,
+            status=DonationStatus.DONATED,
+        )
         with self.assertRaises(Exception):
             donation.full_clean()
 
 
 class BloodSerializerTests(TestCase):
     def test_blood_request_create_serializer_accepts_valid_data(self):
-        serializer = BloodRequestCreateSerializer(data={"title": "Need A+", "blood_group": "A+", "total_capacity": 4})
+        serializer = BloodRequestCreateSerializer(
+            data={"title": "Need A+", "blood_group": "A+", "total_capacity": 4}
+        )
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
     def test_donation_status_serializer_only_allows_donated(self):
@@ -158,12 +194,15 @@ class BloodViewTests(APITestCase):
         response = self.client.get("/blood/donations/me/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_cancelling_non_pending_donation_returns_400(self):
+    def test_cancelling_non_pending_donation_returns_403_for_other_donor(self):
         center = create_medical_center(center_id="CENTER-7")
         _, donor_profile = create_donor("donor-4")
         request = create_blood_request(center)
-        donation = Donation(donor=donor_profile, request=request, status=DonationStatus.CANCELLED)
-        donation.save()
+        donation = Donation.objects.create(
+            donor=donor_profile,
+            request=request,
+            status=DonationStatus.CANCELLED,
+        )
         user, _ = create_donor("donor-6")
         self.client.force_authenticate(user=user)
         response = self.client.patch(f"/blood/donations/{donation.pk}/")
@@ -198,29 +237,6 @@ class BloodViewTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-=======
-import threading
-
-from django.contrib.auth import get_user_model
-from django.db import connection, connections
-from django.test import TransactionTestCase
-from django.urls import reverse
-from rest_framework.test import APIClient
-
-from accounts.models import (
-    BloodGroup,
-    DonorProfile,
-    MedicalCenter,
-    MedicalStaffProfile,
-    UserRole,
-)
-from blood.models import (
-    BloodRequest,
-    Donation,
-    RequestStatus,
-)
-
-User = get_user_model()
 
 
 class RegisterDonationRaceConditionTest(TransactionTestCase):
@@ -259,13 +275,13 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
             total_capacity=1,
         )
 
-        self.donor1 = self.create_donor(
+        self.donor1 = self._create_donor(
             "donor1",
             "2222222222",
             "09120000002",
         )
 
-        self.donor2 = self.create_donor(
+        self.donor2 = self._create_donor(
             "donor2",
             "3333333333",
             "09120000003",
@@ -275,13 +291,12 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
         connections.close_all()
         super().tearDown()
 
-    def create_donor(self, username, national_code, mobile):
+    def _create_donor(self, username, national_code, mobile):
         user = User.objects.create_user(
             username=username,
             password="password123",
             role=UserRole.DONOR,
         )
-
         DonorProfile.objects.create(
             user=user,
             first_name=username,
@@ -291,19 +306,15 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
             blood_group=BloodGroup.A_POSITIVE,
             province="Tehran",
         )
-
         return user
 
-    def donate(self, user, request_pk, results):
-        from django.db import connections
+    def _donate(self, user, request_pk, results):
         try:
             client = APIClient()
             client.force_authenticate(user=user)
-
             response = client.post(
                 reverse("register-donation", kwargs={"pk": request_pk})
             )
-
             results.append(response.status_code)
         finally:
             connections.close_all()
@@ -313,18 +324,16 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
         request_pk = self.request.pk
 
         t1 = threading.Thread(
-            target=self.donate,
+            target=self._donate,
             args=(self.donor1, request_pk, results),
         )
-
         t2 = threading.Thread(
-            target=self.donate,
+            target=self._donate,
             args=(self.donor2, request_pk, results),
         )
 
         t1.start()
         t2.start()
-
         t1.join()
         t2.join()
 
@@ -347,19 +356,6 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
             1,
             f"Expected exactly one 400, got {results}",
         )
-
-        self.assertEqual(
-            Donation.objects.count(),
-            1,
-        )
-
-        self.assertEqual(
-            self.request.remaining_capacity,
-            0,
-        )
-
-        self.assertEqual(
-            self.request.status,
-            RequestStatus.PENDING,
-        )
->>>>>>> 8cd2c2afe077fc46041ddb84a60b867018524dea
+        self.assertEqual(Donation.objects.count(), 1)
+        self.assertEqual(self.request.remaining_capacity, 0)
+        self.assertEqual(self.request.status, RequestStatus.PENDING)
