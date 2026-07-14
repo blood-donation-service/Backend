@@ -140,6 +140,40 @@ class AccountAuthAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(User.objects.exists())
 
+    def test_donor_registration_rejects_duplicate_mobile_number(self):
+        existing_user = User.objects.create_user(
+            username="1111111111",
+            password="Strong!Pass123",
+            role=UserRole.DONOR,
+        )
+        DonorProfile.objects.create(
+            user=existing_user,
+            first_name="Existing",
+            last_name="Donor",
+            national_code="1111111111",
+            mobile_number="09123456789",
+            blood_group="O+",
+            province="Tehran",
+        )
+
+        response = self.client.post(
+            "/api/auth/register/donor/",
+            {
+                "first_name": "Ali",
+                "last_name": "Ahmadi",
+                "national_code": "2222222222",
+                "mobile_number": "09123456789",
+                "blood_group": "A+",
+                "province": "Tehran",
+                "password": "Strong!Pass123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("mobile_number", response.data)
+        self.assertFalse(User.objects.filter(username="2222222222").exists())
+
     def test_authenticated_user_can_patch_own_profile(self):
         user = User.objects.create_user(
             username="1234567890",

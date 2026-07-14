@@ -12,8 +12,13 @@ from .models import (
 )
 
 
+class BloodRequestMedicalCenterSerializer(MedicalCenterSerializer):
+    class Meta(MedicalCenterSerializer.Meta):
+        fields = MedicalCenterSerializer.Meta.fields + ("province",)
+
+
 class BloodRequestSerializer(serializers.ModelSerializer):
-    medical_center = MedicalCenterSerializer(read_only=True)
+    medical_center = BloodRequestMedicalCenterSerializer(read_only=True)
 
     class Meta:
         model = BloodRequest
