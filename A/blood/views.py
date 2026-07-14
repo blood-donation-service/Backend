@@ -10,7 +10,7 @@ from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from accounts.models import UserRole
@@ -120,7 +120,8 @@ class BloodRequestDetailView(APIView):
     examples=[
         OpenApiExample(
             "Create payload",
-            value={"title": "Urgent A+ needed", "blood_group": "A+", "total_capacity": 5},
+            value={"title": "Urgent A+ needed",
+                   "blood_group": "A+", "total_capacity": 5},
             request_only=True,
         )
     ],
@@ -318,10 +319,16 @@ class RegisterDonationView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        donation = Donation.objects.create(
-            donor=request.user.donor_profile,
-            request=blood_request,
-        )
+        try:
+            donation = Donation.objects.create(
+                donor=request.user.donor_profile,
+                request=blood_request,
+            )
+        except IntegrityError:
+            return Response(
+                {"detail": "You have already registered for this request."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         blood_request.remaining_capacity -= 1
 
