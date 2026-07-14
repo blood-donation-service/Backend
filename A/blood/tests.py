@@ -93,16 +93,14 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
 
         return user
 
-    def donate(self, user, results):
+    def donate(self, user, request_pk, results):
+        from django.db import connections
         try:
             client = APIClient()
             client.force_authenticate(user=user)
 
             response = client.post(
-                reverse(
-                    "register-donation",
-                    kwargs={"pk": self.request.pk},
-                )
+                reverse("register-donation", kwargs={"pk": request_pk})
             )
 
             results.append(response.status_code)
@@ -111,15 +109,16 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
 
     def test_race_condition(self):
         results = []
+        request_pk = self.request.pk
 
         t1 = threading.Thread(
             target=self.donate,
-            args=(self.donor1, results),
+            args=(self.donor1, request_pk, results),
         )
 
         t2 = threading.Thread(
             target=self.donate,
-            args=(self.donor2, results),
+            args=(self.donor2, request_pk, results),
         )
 
         t1.start()
@@ -131,6 +130,22 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
         connections.close_all()
 
         self.request.refresh_from_db()
+
+        self.assertEqual(
+            len(results),
+            2,
+            f"Expected 2 responses, got {results}",
+        )
+        self.assertEqual(
+            results.count(201),
+            1,
+            f"Expected exactly one 201, got {results}",
+        )
+        self.assertEqual(
+            results.count(400),
+            1,
+            f"Expected exactly one 400, got {results}",
+        )
 
         self.assertEqual(
             Donation.objects.count(),
@@ -145,14 +160,4 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
         self.assertEqual(
             self.request.status,
             RequestStatus.PENDING,
-        )
-
-        self.assertEqual(
-            results.count(201),
-            1,
-        )
-
-        self.assertEqual(
-            results.count(400),
-            1,
         )
