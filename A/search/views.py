@@ -4,7 +4,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from blood.models import BloodRequest
+from blood.models import BloodRequest, RequestStatus
 from .filters import BloodRequestFilter
 from .serializers import BloodRequestSearchSerializer
 
@@ -53,7 +53,7 @@ class BloodRequestSearchView(APIView):
         queryset = (
             BloodRequest.objects
             .select_related("medical_center")
-            .all()
+            .filter(status=RequestStatus.ACTIVE)
         )
 
         filtered_queryset = BloodRequestFilter(
