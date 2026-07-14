@@ -367,12 +367,10 @@ select_for_update()
 
 - status
 - blood_group
-- created_at
 
 در Donation:
 
 - status
-- donated_at
 
 ---
 
