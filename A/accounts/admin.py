@@ -67,7 +67,7 @@ class UserAdmin(DjangoUserAdmin, ImportExportModelAdmin):
     add_fieldsets = DjangoUserAdmin.add_fieldsets + (
         ("Project role", {"fields": ("role",)}),
     )
-    list_display = ("username", "role", "is_staff", "is_active")
+    list_display = ("id", "username", "role", "is_staff", "is_active")
     list_filter = ("role", "is_staff", "is_active")
 
     def has_module_permission(self, request):
@@ -97,7 +97,7 @@ class MedicalCenterResource(resources.ModelResource):
 @admin.register(MedicalCenter)
 class MedicalCenterAdmin(ImportExportModelAdmin):
     resource_class = MedicalCenterResource
-    list_display = ("name", "center_id", "phone_number", "postal_code")
+    list_display = ("id", "name", "center_id", "phone_number", "postal_code")
     search_fields = ("name", "center_id", "phone_number",
                      "postal_code", "address")
 
@@ -153,6 +153,7 @@ class MedicalStaffProfileResource(resources.ModelResource):
 class MedicalStaffProfileAdmin(ImportExportModelAdmin):
     resource_class = MedicalStaffProfileResource
     list_display = (
+        "id",
         "first_name",
         "last_name",
         "national_code",
@@ -226,6 +227,7 @@ class DonorProfileResource(resources.ModelResource):
 class DonorProfileAdmin(ImportExportModelAdmin):
     resource_class = DonorProfileResource
     list_display = (
+        "id",
         "first_name",
         "last_name",
         "national_code",
@@ -263,6 +265,7 @@ class MedicalCenterAdminProfileResource(resources.ModelResource):
 class MedicalCenterAdminProfileAdmin(ImportExportModelAdmin):
     resource_class = MedicalCenterAdminProfileResource
     list_display = (
+        "id",
         "first_name",
         "last_name",
         "national_code",
@@ -320,6 +323,7 @@ class StaffRegistrationRequestResource(resources.ModelResource):
 class StaffRegistrationRequestAdmin(ImportExportModelAdmin):
     resource_class = StaffRegistrationRequestResource
     list_display = (
+        "id",
         "first_name",
         "last_name",
         "national_code",

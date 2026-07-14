@@ -26,6 +26,7 @@ class BloodRequestResource(resources.ModelResource):
 class BloodRequestAdmin(ImportExportModelAdmin):
     resource_class = BloodRequestResource
     list_display = (
+        "id",
         "title",
         "medical_center",
         "blood_group",
@@ -57,7 +58,7 @@ class DonationResource(resources.ModelResource):
 @admin.register(Donation)
 class DonationAdmin(ImportExportModelAdmin):
     resource_class = DonationResource
-    list_display = ("donor", "request", "status", "registered_at", "donated_at")
+    list_display = ("id", "donor", "request", "status", "registered_at", "donated_at")
     list_filter = ("status", "registered_at", "donated_at")
     search_fields = (
         "donor__first_name",
