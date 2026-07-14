@@ -1,6 +1,7 @@
 import threading
 
 from django.contrib.auth import get_user_model
+from django.db import connection, connections
 from django.test import TransactionTestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -23,6 +24,7 @@ User = get_user_model()
 
 class RegisterDonationRaceConditionTest(TransactionTestCase):
     reset_sequences = True
+    serialized_rollback = True
 
     def setUp(self):
         self.center = MedicalCenter.objects.create(
@@ -68,6 +70,10 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
             "09120000003",
         )
 
+    def tearDown(self):
+        connections.close_all()
+        super().tearDown()
+
     def create_donor(self, username, national_code, mobile):
         user = User.objects.create_user(
             username=username,
@@ -88,17 +94,20 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
         return user
 
     def donate(self, user, results):
-        client = APIClient()
-        client.force_authenticate(user=user)
+        try:
+            client = APIClient()
+            client.force_authenticate(user=user)
 
-        response = client.post(
-            reverse(
-                "register-donation",
-                kwargs={"pk": self.request.pk},
+            response = client.post(
+                reverse(
+                    "register-donation",
+                    kwargs={"pk": self.request.pk},
+                )
             )
-        )
 
-        results.append(response.status_code)
+            results.append(response.status_code)
+        finally:
+            connections.close_all()
 
     def test_race_condition(self):
         results = []
@@ -118,6 +127,8 @@ class RegisterDonationRaceConditionTest(TransactionTestCase):
 
         t1.join()
         t2.join()
+
+        connections.close_all()
 
         self.request.refresh_from_db()
 
