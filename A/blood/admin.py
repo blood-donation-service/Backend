@@ -1,10 +1,30 @@
 from django.contrib import admin
+from import_export import resources
+from import_export.admin import ImportExportModelAdmin
 
 from .models import BloodRequest, Donation
 
 
+class BloodRequestResource(resources.ModelResource):
+    class Meta:
+        model = BloodRequest
+        fields = (
+            "id",
+            "medical_center__center_id",
+            "title",
+            "blood_group",
+            "total_capacity",
+            "remaining_capacity",
+            "status",
+            "created_at",
+            "updated_at",
+        )
+        export_order = fields
+
+
 @admin.register(BloodRequest)
-class BloodRequestAdmin(admin.ModelAdmin):
+class BloodRequestAdmin(ImportExportModelAdmin):
+    resource_class = BloodRequestResource
     list_display = (
         "title",
         "medical_center",
@@ -18,8 +38,25 @@ class BloodRequestAdmin(admin.ModelAdmin):
     search_fields = ("title", "medical_center__name", "medical_center__center_id")
 
 
+class DonationResource(resources.ModelResource):
+    class Meta:
+        model = Donation
+        fields = (
+            "id",
+            "donor__national_code",
+            "request__title",
+            "status",
+            "registered_at",
+            "donated_at",
+            "cancelled_at",
+            "updated_at",
+        )
+        export_order = fields
+
+
 @admin.register(Donation)
-class DonationAdmin(admin.ModelAdmin):
+class DonationAdmin(ImportExportModelAdmin):
+    resource_class = DonationResource
     list_display = ("donor", "request", "status", "registered_at", "donated_at")
     list_filter = ("status", "registered_at", "donated_at")
     search_fields = (

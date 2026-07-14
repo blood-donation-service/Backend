@@ -10,7 +10,8 @@ from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 
 from accounts.models import UserRole
@@ -120,7 +121,8 @@ class BloodRequestDetailView(APIView):
     examples=[
         OpenApiExample(
             "Create payload",
-            value={"title": "Urgent A+ needed", "blood_group": "A+", "total_capacity": 5},
+            value={"title": "Urgent A+ needed",
+                   "blood_group": "A+", "total_capacity": 5},
             request_only=True,
         )
     ],
@@ -285,7 +287,6 @@ class ResolveBloodRequestView(APIView):
 class RegisterDonationView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
     def post(self, request, pk):
         if request.user.role != UserRole.DONOR:
             return Response(
@@ -293,47 +294,53 @@ class RegisterDonationView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        blood_request = get_object_or_404(
-            BloodRequest.objects.select_for_update(),
-            pk=pk,
-            status=RequestStatus.ACTIVE,
-        )
-
-        if blood_request.remaining_capacity <= 0:
-            return Response(
-                {"detail": "This request has no remaining capacity."},
-                status=status.HTTP_400_BAD_REQUEST,
+        with transaction.atomic():
+            updated = BloodRequest.objects.filter(
+                pk=pk,
+                status=RequestStatus.ACTIVE,
+                remaining_capacity__gt=0,
+            ).update(
+                remaining_capacity=F("remaining_capacity") - 1,
             )
 
-        if Donation.objects.filter(
-            donor=request.user.donor_profile,
-            request=blood_request,
-            status__in=[
-                DonationStatus.PENDING,
-                DonationStatus.DONATED,
-            ],
-        ).exists():
-            return Response(
-                {"detail": "You have already registered for this request."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            if not updated:
+                return Response(
+                    {"detail": "This request has no remaining capacity."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        donation = Donation.objects.create(
-            donor=request.user.donor_profile,
-            request=blood_request,
-        )
+            blood_request = BloodRequest.objects.get(pk=pk)
 
-        blood_request.remaining_capacity -= 1
+            if Donation.objects.filter(
+                donor=request.user.donor_profile,
+                request=blood_request,
+                status__in=[
+                    DonationStatus.PENDING,
+                    DonationStatus.DONATED,
+                ],
+            ).exists():
+                transaction.set_rollback(True)
+                return Response(
+                    {"detail": "You have already registered for this request."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        if blood_request.remaining_capacity == 0:
-            blood_request.status = RequestStatus.PENDING
+            try:
+                donation = Donation.objects.create(
+                    donor=request.user.donor_profile,
+                    request=blood_request,
+                )
+            except IntegrityError:
+                transaction.set_rollback(True)
+                return Response(
+                    {"detail": "You have already registered for this request."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        blood_request.save(
-            update_fields=[
-                "remaining_capacity",
-                "status",
-            ]
-        )
+            if blood_request.remaining_capacity == 0:
+                BloodRequest.objects.filter(pk=pk).update(
+                    status=RequestStatus.PENDING,
+                )
 
         return Response(
             DonationSerializer(donation).data,
