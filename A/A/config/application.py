@@ -24,6 +24,7 @@ INSTALLED_APPS += [
     'corsheaders',
     'django_filters',
     'drf_spectacular',
+    'import_export',
 ]
 
 if DEBUG:

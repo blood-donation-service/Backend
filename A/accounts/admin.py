@@ -1,5 +1,8 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from import_export import resources
+from import_export.admin import ImportExportModelAdmin
+from import_export.fields import Field
 
 from .models import (
     DonorProfile,
@@ -29,8 +32,35 @@ def _can_see_module(request):
     return request.user.is_superuser or _is_center_admin(request.user)
 
 
+class UserResource(resources.ModelResource):
+    role = Field(column_name="role")
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "role",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+            "date_joined",
+            "last_login",
+        )
+        export_order = fields
+        import_id_fields = ("username",)
+
+    def before_import_row(self, row, **kwargs):
+        if "password" in row and row["password"]:
+            row["password"] = row["password"]
+
+
 @admin.register(User)
-class UserAdmin(DjangoUserAdmin):
+class UserAdmin(DjangoUserAdmin, ImportExportModelAdmin):
+    resource_class = UserResource
     fieldsets = DjangoUserAdmin.fieldsets + (
         ("Project role", {"fields": ("role",)}),
     )
@@ -44,8 +74,29 @@ class UserAdmin(DjangoUserAdmin):
         return request.user.is_superuser
 
 
+class MedicalCenterResource(resources.ModelResource):
+    class Meta:
+        model = MedicalCenter
+        fields = (
+            "id",
+            "center_id",
+            "name",
+            "postal_code",
+            "address",
+            "phone_number",
+            "province",
+            "latitude",
+            "longitude",
+            "created_at",
+            "updated_at",
+        )
+        export_order = fields
+        import_id_fields = ("center_id",)
+
+
 @admin.register(MedicalCenter)
-class MedicalCenterAdmin(admin.ModelAdmin):
+class MedicalCenterAdmin(ImportExportModelAdmin):
+    resource_class = MedicalCenterResource
     list_display = ("name", "center_id", "phone_number", "postal_code")
     search_fields = ("name", "center_id", "phone_number",
                      "postal_code", "address")
@@ -80,8 +131,27 @@ class MedicalCenterAdmin(admin.ModelAdmin):
         return request.user.is_superuser
 
 
+class MedicalStaffProfileResource(resources.ModelResource):
+    class Meta:
+        model = MedicalStaffProfile
+        fields = (
+            "id",
+            "user__username",
+            "medical_center__center_id",
+            "first_name",
+            "last_name",
+            "national_code",
+            "mobile_number",
+            "created_at",
+            "updated_at",
+        )
+        export_order = fields
+        import_id_fields = ("national_code",)
+
+
 @admin.register(MedicalStaffProfile)
-class MedicalStaffProfileAdmin(admin.ModelAdmin):
+class MedicalStaffProfileAdmin(ImportExportModelAdmin):
+    resource_class = MedicalStaffProfileResource
     list_display = (
         "first_name",
         "last_name",
@@ -133,8 +203,28 @@ class MedicalStaffProfileAdmin(admin.ModelAdmin):
         return _admin_center_qs(request).filter(pk=obj.medical_center_id).exists()
 
 
+class DonorProfileResource(resources.ModelResource):
+    class Meta:
+        model = DonorProfile
+        fields = (
+            "id",
+            "user__username",
+            "first_name",
+            "last_name",
+            "national_code",
+            "mobile_number",
+            "blood_group",
+            "province",
+            "created_at",
+            "updated_at",
+        )
+        export_order = fields
+        import_id_fields = ("national_code",)
+
+
 @admin.register(DonorProfile)
-class DonorProfileAdmin(admin.ModelAdmin):
+class DonorProfileAdmin(ImportExportModelAdmin):
+    resource_class = DonorProfileResource
     list_display = (
         "first_name",
         "last_name",
@@ -151,8 +241,27 @@ class DonorProfileAdmin(admin.ModelAdmin):
         return request.user.is_superuser
 
 
+class MedicalCenterAdminProfileResource(resources.ModelResource):
+    class Meta:
+        model = MedicalCenterAdminProfile
+        fields = (
+            "id",
+            "user__username",
+            "medical_center__center_id",
+            "first_name",
+            "last_name",
+            "national_code",
+            "mobile_number",
+            "created_at",
+            "updated_at",
+        )
+        export_order = fields
+        import_id_fields = ("national_code",)
+
+
 @admin.register(MedicalCenterAdminProfile)
-class MedicalCenterAdminProfileAdmin(admin.ModelAdmin):
+class MedicalCenterAdminProfileAdmin(ImportExportModelAdmin):
+    resource_class = MedicalCenterAdminProfileResource
     list_display = (
         "first_name",
         "last_name",
@@ -172,7 +281,6 @@ class MedicalCenterAdminProfileAdmin(admin.ModelAdmin):
     )
 
     list_filter = ("medical_center",)
-
     autocomplete_fields = ("user", "medical_center")
 
     def has_module_permission(self, request):
@@ -191,8 +299,26 @@ class MedicalCenterAdminProfileAdmin(admin.ModelAdmin):
         return request.user.is_superuser
 
 
+class StaffRegistrationRequestResource(resources.ModelResource):
+    class Meta:
+        model = StaffRegistrationRequest
+        fields = (
+            "id",
+            "medical_center__center_id",
+            "first_name",
+            "last_name",
+            "national_code",
+            "mobile_number",
+            "status",
+            "created_at",
+            "updated_at",
+        )
+        export_order = fields
+
+
 @admin.register(StaffRegistrationRequest)
-class StaffRegistrationRequestAdmin(admin.ModelAdmin):
+class StaffRegistrationRequestAdmin(ImportExportModelAdmin):
+    resource_class = StaffRegistrationRequestResource
     list_display = (
         "first_name",
         "last_name",
